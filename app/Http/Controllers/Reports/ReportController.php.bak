@@ -1,0 +1,29 @@
+<?php
+
+namespace App\Http\Controllers\Reports;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+
+class DailyCashReportController extends Controller
+{
+    public function index(Request $request)
+    {
+        // STEP INI SENGAJA BELUM HITUNG DB
+        // supaya tidak salah nama tabel/kolom dan tidak merusak modul yang sudah jalan.
+        // Setelah kamu kirim info tabel payments & expenses, baru kita isi query DB-nya.
+
+        $date = $request->get('date', now()->toDateString());
+
+        return view('reports.daily_cash', [
+            'date' => $date,
+            'summary' => [
+                'in' => 0,
+                'out' => 0,
+                'net' => 0,
+            ],
+            'incomeRows' => [],
+            'expenseRows' => [],
+        ]);
+    }
+}
