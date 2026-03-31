@@ -1,47 +1,92 @@
 <?php
 
-namespace App\Http\Controllers\Auth;
+namespace App\Http\Requests\Auth;
 
-use App\Http\Controllers\Controller;
-use App\Http\Requests\Auth\LoginRequest;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\View\View;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
-class AuthenticatedSessionController extends Controller
+class LoginRequest extends FormRequest
 {
     /**
-     * Display the login view.
+     * Determine if the user is authorized to make this request.
      */
-    public function create(): View
+    public function authorize(): bool
     {
-        return view('auth.login');
+        return true;
     }
 
     /**
-     * Handle an incoming authentication request.
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
      */
-    public function store(LoginRequest $request): RedirectResponse
+    public function rules(): array
     {
-        $request->authenticate();
-
-        $request->session()->regenerate();
-
-        return redirect()->route('dashboard');
+        return [
+            'username' => ['required', 'string'],
+            'password' => ['required', 'string'],
+        ];
     }
 
     /**
-     * Destroy an authenticated session.
+     * Attempt to authenticate the request's credentials.
+     *
+     * @throws \Illuminate\Validation\ValidationException
      */
-    public function destroy(Request $request): RedirectResponse
+    public function authenticate(): void
     {
-        Auth::guard('web')->logout();
+        $this->ensureIsNotRateLimited();
 
-        $request->session()->invalidate();
+        $login = (string) $this->input('username');
 
-        $request->session()->regenerateToken();
+        $credentials = [
+            'email' => $login,
+            'password' => (string) $this->input('password'),
+        ];
 
-        return redirect('/');
+        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'username' => trans('auth.failed'),
+            ]);
+        }
+
+        RateLimiter::clear($this->throttleKey());
+    }
+
+    /**
+     * Ensure the login request is not rate limited.
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    public function ensureIsNotRateLimited(): void
+    {
+        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+            return;
+        }
+
+        event(new Lockout($this));
+
+        $seconds = RateLimiter::availableIn($this->throttleKey());
+
+        throw ValidationException::withMessages([
+            'username' => trans('auth.throttle', [
+                'seconds' => $seconds,
+                'minutes' => ceil($seconds / 60),
+            ]),
+        ]);
+    }
+
+    /**
+     * Get the rate limiting throttle key for the request.
+     */
+    public function throttleKey(): string
+    {
+        return Str::transliterate(Str::lower((string) $this->input('username')).'|'.$this->ip());
     }
 }
