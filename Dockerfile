@@ -10,11 +10,12 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     libonig-dev \
     libxml2-dev \
+    libzip-dev \
     zip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd pdo pdo_mysql mbstring exif bcmath
+    && docker-php-ext-install gd zip pdo pdo_mysql mbstring exif bcmath
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
