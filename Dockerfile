@@ -53,3 +53,4 @@ CMD php artisan optimize:clear && \
     php artisan view:clear && \
     php artisan migrate --force && \
     service nginx start && php-fpm -F
+    RUN php artisan migrate --force && php artisan db:seed --force
