@@ -318,7 +318,7 @@ $loginBgUrl = $loginBgPath
                 </div>
             @endif
 
-            <form method="POST" action="{{ route('login') }}">
+            <form method="POST" action="{{ secure_url('/login') }}">
                 @csrf
 
                 <div class="df-field">
