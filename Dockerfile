@@ -1,6 +1,5 @@
 FROM php:8.3-fpm
 
-# Install dependencies
 RUN apt-get update && apt-get install -y \
     nginx \
     git \
@@ -11,25 +10,24 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     libonig-dev \
     libxml2-dev \
-    zip
+    zip \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install gd pdo pdo_mysql mbstring exif bcmath
 
-# Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www
 
 COPY . .
 
-RUN composer install --no-interaction --optimize-autoloader
+ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# Laravel permissions
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
 RUN chmod -R 777 storage bootstrap/cache
 
-# Expose port
 EXPOSE 8080
 
 CMD php artisan serve --host=0.0.0.0 --port=8080
