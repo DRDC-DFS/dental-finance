@@ -1,92 +1,60 @@
 <?php
 
-namespace App\Http\Requests\Auth;
+namespace App\Http\Controllers\Auth;
 
-use Illuminate\Auth\Events\Lockout;
-use Illuminate\Foundation\Http\FormRequest;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LoginRequest;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 
-class LoginRequest extends FormRequest
+class AuthenticatedSessionController extends Controller
 {
     /**
-     * Determine if the user is authorized to make this request.
+     * Display the login view.
      */
-    public function authorize(): bool
+    public function create(): View
     {
-        return true;
+        return view('auth.login');
     }
 
     /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * Handle an incoming authentication request.
      */
-    public function rules(): array
+    public function store(LoginRequest $request): RedirectResponse
     {
-        return [
-            'username' => ['required', 'string'],
-            'password' => ['required', 'string'],
-        ];
-    }
+        $request->authenticate();
 
-    /**
-     * Attempt to authenticate the request's credentials.
-     *
-     * @throws \Illuminate\Validation\ValidationException
-     */
-    public function authenticate(): void
-    {
-        $this->ensureIsNotRateLimited();
+        $request->session()->regenerate();
 
-        $login = (string) $this->input('username');
+        $user = Auth::user();
+        $role = strtolower((string) ($user->role ?? ''));
 
-        $credentials = [
-            'email' => $login,
-            'password' => (string) $this->input('password'),
-        ];
-
-        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
-            RateLimiter::hit($this->throttleKey());
-
-            throw ValidationException::withMessages([
-                'username' => trans('auth.failed'),
-            ]);
+        if (in_array($role, ['owner', 'admin'], true)) {
+            return redirect()->intended(route('dashboard', absolute: false));
         }
 
-        RateLimiter::clear($this->throttleKey());
-    }
+        Auth::logout();
 
-    /**
-     * Ensure the login request is not rate limited.
-     *
-     * @throws \Illuminate\Validation\ValidationException
-     */
-    public function ensureIsNotRateLimited(): void
-    {
-        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
-            return;
-        }
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
-        event(new Lockout($this));
-
-        $seconds = RateLimiter::availableIn($this->throttleKey());
-
-        throw ValidationException::withMessages([
-            'username' => trans('auth.throttle', [
-                'seconds' => $seconds,
-                'minutes' => ceil($seconds / 60),
-            ]),
+        return redirect()->route('login')->withErrors([
+            'username' => 'Hanya OWNER atau ADMIN yang boleh login.',
         ]);
     }
 
     /**
-     * Get the rate limiting throttle key for the request.
+     * Destroy an authenticated session.
      */
-    public function throttleKey(): string
+    public function destroy(Request $request): RedirectResponse
     {
-        return Str::transliterate(Str::lower((string) $this->input('username')).'|'.$this->ip());
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect('/');
     }
 }
