@@ -4,21 +4,13 @@ $setting = class_exists(\App\Models\Setting::class)
     : null;
 
 $clinicName = $setting?->clinic_name ?: 'DentalFinance';
-$logoPath   = $setting?->logo_path ?: null;
+$logoUrl    = $setting?->logo_url ?: null;
 
 /**
  * Background login dari Master Klinik (Setting).
- * Kita pakai beberapa fallback field agar aman terhadap perbedaan nama kolom.
+ * Utamakan accessor dari model agar path lebih aman untuk local / production.
  */
-$loginBgPath = $setting?->login_background_path
-    ?: ($setting?->login_bg_path
-    ?: ($setting?->background_path
-    ?: ($setting?->bg_path
-    ?: ($setting?->login_bg ?: null))));
-
-$loginBgUrl = $loginBgPath
-    ? asset('storage/' . ltrim((string) $loginBgPath, '/'))
-    : asset('assets/login-bg.jpg'); // fallback kalau belum ada
+$loginBgUrl = $setting?->login_background_url ?: asset('assets/login-bg.jpg');
 @endphp
 
 <x-guest-layout>
@@ -287,8 +279,8 @@ $loginBgUrl = $loginBgPath
     <div class="df-card">
         <div class="df-body">
             <div class="df-header-center">
-                @if($logoPath)
-                    <img class="df-logo-center" src="{{ asset('storage/'.ltrim($logoPath,'/')) }}" alt="Logo Klinik">
+                @if($logoUrl)
+                    <img class="df-logo-center" src="{{ $logoUrl }}" alt="Logo Klinik">
                 @else
                     <div style="
                         width:130px;height:130px;border-radius:28px;

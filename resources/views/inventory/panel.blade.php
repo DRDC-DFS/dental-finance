@@ -473,13 +473,14 @@
                         <table class="table table-bordered align-middle mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th style="width: 28%">Nama Item</th>
+                                    <th style="width: 24%">Nama Item</th>
                                     <th style="width: 12%">Jenis</th>
                                     <th style="width: 12%">Satuan</th>
                                     <th style="width: 14%" class="text-end">Stok Saat Ini</th>
                                     <th style="width: 14%" class="text-end">Minimum Stok</th>
                                     <th style="width: 10%">Status</th>
-                                    <th style="width: 10%">Aktif</th>
+                                    <th style="width: 8%">Aktif</th>
+                                    <th style="width: 16%" class="text-center">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -489,6 +490,7 @@
                                         $minimum = (float) ($item->minimum_stock ?? 0);
                                         $isBelow = $minimum > 0 && $stock < $minimum;
                                         $isAtMinimum = $minimum > 0 && $stock == $minimum;
+                                        $isOwnerUser = strtolower((string) (auth()->user()->role ?? '')) === 'owner';
                                     @endphp
                                     <tr class="{{ $isBelow || $isAtMinimum ? 'table-warning' : '' }}">
                                         <td>{{ $item->name }}</td>
@@ -510,6 +512,28 @@
                                                 <span class="badge bg-success">ACTIVE</span>
                                             @else
                                                 <span class="badge bg-secondary">INACTIVE</span>
+                                            @endif
+                                        </td>
+                                        <td class="text-center">
+                                            @if($isOwnerUser)
+                                                <div class="d-inline-flex flex-wrap justify-content-center gap-1">
+                                                    <a href="{{ route('inventory.items.edit', $item->id) }}" class="btn btn-sm btn-warning">
+                                                        Edit
+                                                    </a>
+
+                                                    <form method="POST"
+                                                          action="{{ route('inventory.items.destroy', $item->id) }}"
+                                                          class="d-inline"
+                                                          onsubmit="return confirm('Yakin hapus item ini?')">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button class="btn btn-sm btn-danger">
+                                                            Hapus
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            @else
+                                                <span class="text-muted small">-</span>
                                             @endif
                                         </td>
                                     </tr>

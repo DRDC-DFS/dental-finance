@@ -2,13 +2,21 @@
 
 @section('content')
 
+@php
+    $setting = class_exists(\App\Models\Setting::class)
+        ? \App\Models\Setting::query()->first()
+        : null;
+
+    $logoUrl = $setting?->logo_url;
+@endphp
+
 <div class="container py-4">
 
     <div class="text-center mb-4">
         <div style="max-width:600px;margin:0 auto;">
-            @if($logoPath)
+            @if($logoUrl)
                 <img
-                    src="{{ asset('storage/' . $logoPath) }}"
+                    src="{{ $logoUrl }}"
                     style="width:220px;height:auto;object-fit:contain;"
                     alt="Logo Klinik">
             @endif

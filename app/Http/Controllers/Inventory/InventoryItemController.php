@@ -188,6 +188,27 @@ class InventoryItemController extends Controller
             ->with('success', 'Item berhasil diperbarui.');
     }
 
+    public function destroy(InventoryItem $item)
+    {
+        if (!$this->isOwner()) {
+            abort(403, 'Hanya OWNER yang boleh menghapus item inventory.');
+        }
+
+        $hasMovements = InventoryMovement::where('item_id', $item->id)->exists();
+
+        if ($hasMovements) {
+            return back()->withErrors([
+                'delete_item' => 'Item tidak bisa dihapus karena sudah memiliki riwayat inventory masuk/keluar.',
+            ]);
+        }
+
+        $item->delete();
+
+        return redirect()
+            ->route('inventory.panel', ['tab' => 'items'])
+            ->with('success', 'Item berhasil dihapus.');
+    }
+
     private function isValidTypeFilter(?string $typeFilter): bool
     {
         return in_array($typeFilter, ['barang', 'bahan', 'alat'], true);
