@@ -136,6 +136,46 @@
                     </div>
                 </div>
 
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <input type="hidden" name="is_ortho_related" value="0">
+
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   name="is_ortho_related"
+                                   id="is_ortho_related"
+                                   value="1"
+                                   {{ old('is_ortho_related') == '1' ? 'checked' : '' }}>
+                            <label class="form-check-label" for="is_ortho_related">
+                                Terkait Ortho
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            Centang jika treatment ini termasuk kelompok tindakan ortho, agar nanti sistem bisa memunculkan pilihan mode ortho saat dipakai di transaksi.
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <input type="hidden" name="is_prosto_related" value="0">
+
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   name="is_prosto_related"
+                                   id="is_prosto_related"
+                                   value="1"
+                                   {{ old('is_prosto_related') == '1' ? 'checked' : '' }}>
+                            <label class="form-check-label" for="is_prosto_related">
+                                Terkait Prosto
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            Centang jika treatment ini termasuk kelompok tindakan prosto, agar nanti sistem bisa memunculkan pilihan mode prosto saat dipakai di transaksi.
+                        </div>
+                    </div>
+                </div>
+
                 <div class="mb-3">
                     <label class="form-label">Petunjuk Input (opsional)</label>
                     <textarea name="notes_hint"

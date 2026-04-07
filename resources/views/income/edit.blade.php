@@ -137,6 +137,19 @@
             padding:12px 14px;
             color:#9a3412;
         }
+        .prosto-box{
+            background:#eff6ff;
+            border:1px solid #bfdbfe;
+            border-radius:12px;
+            padding:12px 14px;
+            color:#1d4ed8;
+        }
+        .inline-case-box{
+            background:#f8fafc;
+            border:1px solid #cbd5e1;
+            border-radius:12px;
+            padding:12px 14px;
+        }
         .discount-box{
             background:#fffbeb;
             border:1px solid #fde68a;
@@ -234,6 +247,7 @@
         $billTotalBase = (float) $incomeTransaction->bill_total;
         $payerType = old('payer_type', $incomeTransaction->payer_type ?? 'umum');
         $orthoCaseMode = old('ortho_case_mode', $incomeTransaction->ortho_case_mode ?? 'none');
+        $prostoCaseMode = old('prosto_case_mode', $incomeTransaction->prosto_case_mode ?? 'none');
         $isBpjs = strtolower((string) $payerType) === 'bpjs';
         $isKhusus = strtolower((string) $payerType) === 'khusus';
         $role = strtolower((string) (auth()->user()->role ?? ''));
@@ -258,18 +272,6 @@
             count(is_array($oldChannels) ? $oldChannels : []),
             count(is_array($oldAmounts) ? $oldAmounts : [])
         );
-
-        $hasExistingOrthoItem = collect($incomeTransaction->items ?? [])->contains(function ($item) {
-            $name = strtolower((string) ($item->treatment->name ?? ''));
-            foreach (['ortho', 'behel', 'aligner'] as $keyword) {
-                if (str_contains($name, $keyword)) {
-                    return true;
-                }
-            }
-            return false;
-        });
-
-        $showOrthoSectionInitially = $hasExistingOrthoItem || $orthoCaseMode !== 'none';
     @endphp
 
     <div class="topbar">
@@ -289,6 +291,11 @@
                 Mode Ortho:
                 <span class="badge" style="background:#fff7ed;color:#9a3412;border-color:#fdba74;">
                     {{ strtoupper($orthoCaseMode) }}
+                </span>
+                <span style="margin:0 10px;">•</span>
+                Mode Prosto:
+                <span class="badge" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">
+                    {{ strtoupper($prostoCaseMode) }}
                 </span>
             </div>
         </div>
@@ -405,6 +412,9 @@
                            placeholder="Catatan transaksi">
                 </div>
 
+                <input type="hidden" name="ortho_case_mode" value="{{ $orthoCaseMode }}">
+                <input type="hidden" name="prosto_case_mode" value="{{ $prostoCaseMode }}">
+
                 <div style="grid-column:1/-1;display:flex;justify-content:flex-end;">
                     <button type="submit" class="btn btn-primary">Simpan Perubahan Header</button>
                 </div>
@@ -438,33 +448,76 @@
             <form method="POST" action="{{ route('income.items.store', $incomeTransaction->id) }}" class="grid5" id="addItemForm">
                 @csrf
 
-                <div>
+                <div style="grid-column:1/-1;">
                     <label class="label">Tindakan</label>
                     <select id="treatment_id" name="treatment_id" class="select">
                         <option value="">- Pilih tindakan -</option>
                         @foreach($treatments as $t)
-                            @php
-                                $treatmentNameLower = strtolower((string) ($t->name ?? ''));
-                                $isTreatmentOrtho = false;
-                                foreach (['ortho', 'behel', 'aligner'] as $keyword) {
-                                    if (str_contains($treatmentNameLower, $keyword)) {
-                                        $isTreatmentOrtho = true;
-                                        break;
-                                    }
-                                }
-                            @endphp
                             <option value="{{ $t->id }}"
                                     data-price="{{ (float) $t->price }}"
                                     data-price-mode="{{ strtolower((string) ($t->price_mode ?? 'fixed')) }}"
                                     data-notes-hint="{{ e((string) ($t->notes_hint ?? '')) }}"
                                     data-unit="{{ e((string) ($t->unit ?? '1x')) }}"
                                     data-is-free="{{ (int) ($t->is_free ?? 0) }}"
-                                    data-is-ortho="{{ $isTreatmentOrtho ? '1' : '0' }}">
+                                    data-is-ortho="{{ (int) ($t->is_ortho_related ?? 0) }}"
+                                    data-is-prosto="{{ (int) ($t->is_prosto_related ?? 0) }}">
                                 {{ $t->name }} ({{ $t->unit }}) - {{ format_rupiah($t->price) }}
                                 [{{ strtolower((string) ($t->price_mode ?? 'fixed')) === 'manual' ? 'MANUAL' : 'FIXED' }}]{{ (int) ($t->is_free ?? 0) === 1 ? ' [FREE]' : '' }}
                             </option>
                         @endforeach
                     </select>
+                </div>
+
+                <div id="ortho_auto_notice_wrap" style="grid-column:1/-1;display:none;">
+                    <div class="ortho-box">
+                        <b>Tindakan ortho terdeteksi.</b>
+                        Silakan pilih <b>Mode Kasus Ortho</b> sebelum melanjutkan.
+                    </div>
+                </div>
+
+                <div id="ortho_case_mode_inline_wrap" style="grid-column:1/-1;display:none;">
+                    <div class="inline-case-box">
+                        <div class="grid2">
+                            <div>
+                                <label class="label">Mode Kasus Ortho</label>
+                                <select name="ortho_case_mode" id="ortho_case_mode_select_inline" class="select" form="orthoCaseModeForm">
+                                    <option value="none" @selected($orthoCaseMode === 'none')>BUKAN KASUS ORTHO</option>
+                                    <option value="biasa" @selected($orthoCaseMode === 'biasa')>ORTHO BIASA</option>
+                                    <option value="lanjutan" @selected($orthoCaseMode === 'lanjutan')>ORTHO LANJUTAN</option>
+                                </select>
+                            </div>
+
+                            <div style="display:flex;align-items:end;justify-content:flex-end;">
+                                <button type="submit" form="orthoCaseModeForm" class="btn btn-primary">Simpan Mode Ortho</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="prosto_auto_notice_wrap" style="grid-column:1/-1;display:none;">
+                    <div class="prosto-box">
+                        <b>Tindakan prosto terdeteksi.</b>
+                        Silakan pilih <b>Mode Kasus Prosto</b> sebelum melanjutkan.
+                    </div>
+                </div>
+
+                <div id="prosto_case_mode_inline_wrap" style="grid-column:1/-1;display:none;">
+                    <div class="inline-case-box">
+                        <div class="grid2">
+                            <div>
+                                <label class="label">Mode Kasus Prosto</label>
+                                <select name="prosto_case_mode" id="prosto_case_mode_select_inline" class="select" form="prostoCaseModeForm">
+                                    <option value="none" @selected($prostoCaseMode === 'none')>BUKAN KASUS PROSTO</option>
+                                    <option value="biasa" @selected($prostoCaseMode === 'biasa')>PROSTO BIASA</option>
+                                    <option value="lanjutan" @selected($prostoCaseMode === 'lanjutan')>PROSTO LANJUTAN</option>
+                                </select>
+                            </div>
+
+                            <div style="display:flex;align-items:end;justify-content:flex-end;">
+                                <button type="submit" form="prostoCaseModeForm" class="btn btn-primary">Simpan Mode Prosto</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div>
@@ -530,13 +583,6 @@
                     </div>
                 </div>
 
-                <div id="ortho_auto_notice_wrap" style="grid-column:1/-1;display:none;">
-                    <div class="ortho-box">
-                        <b>Tindakan ortho terdeteksi.</b>
-                        Silakan pilih <b>Mode Kasus Ortho</b> di section yang muncul di bawah ini, lalu simpan mode tersebut agar pengelompokan kasus ortho tetap rapi.
-                    </div>
-                </div>
-
                 <div style="grid-column:1/-1;">
                     <div class="preview-box">
                         <div class="preview-row">
@@ -564,6 +610,32 @@
                 <div style="grid-column:1/-1;display:flex;justify-content:flex-end;">
                     <button type="submit" class="btn btn-primary">+ Tambah Item</button>
                 </div>
+            </form>
+
+            <form method="POST" action="{{ route('income.update', ['income' => $incomeTransaction->id]) }}" id="orthoCaseModeForm" style="display:none;">
+                @csrf
+                @method('PUT')
+                <input type="hidden" name="trx_date" value="{{ old('trx_date', $trxDateValue) }}">
+                <input type="hidden" name="doctor_id" value="{{ old('doctor_id', $incomeTransaction->doctor_id) }}">
+                <input type="hidden" name="patient_name" value="{{ old('patient_name', $incomeTransaction->patient?->name) }}">
+                <input type="hidden" name="patient_phone" value="{{ old('patient_phone', $incomeTransaction->patient?->phone) }}">
+                <input type="hidden" name="payer_type" value="{{ $payerType }}">
+                <input type="hidden" name="visibility" value="{{ old('visibility', $incomeTransaction->visibility) }}">
+                <input type="hidden" name="notes" value="{{ old('notes', $incomeTransaction->notes) }}">
+                <input type="hidden" name="prosto_case_mode" value="{{ $prostoCaseMode }}">
+            </form>
+
+            <form method="POST" action="{{ route('income.update', ['income' => $incomeTransaction->id]) }}" id="prostoCaseModeForm" style="display:none;">
+                @csrf
+                @method('PUT')
+                <input type="hidden" name="trx_date" value="{{ old('trx_date', $trxDateValue) }}">
+                <input type="hidden" name="doctor_id" value="{{ old('doctor_id', $incomeTransaction->doctor_id) }}">
+                <input type="hidden" name="patient_name" value="{{ old('patient_name', $incomeTransaction->patient?->name) }}">
+                <input type="hidden" name="patient_phone" value="{{ old('patient_phone', $incomeTransaction->patient?->phone) }}">
+                <input type="hidden" name="payer_type" value="{{ $payerType }}">
+                <input type="hidden" name="visibility" value="{{ old('visibility', $incomeTransaction->visibility) }}">
+                <input type="hidden" name="notes" value="{{ old('notes', $incomeTransaction->notes) }}">
+                <input type="hidden" name="ortho_case_mode" value="{{ $orthoCaseMode }}">
             </form>
         </div>
     </div>
@@ -596,12 +668,20 @@
                             $itemNotesHint = trim((string) ($itemTreatment->notes_hint ?? ''));
                             $formId = 'update-item-form-' . $item->id;
                             $itemDiscount = (float) ($item->discount_amount ?? 0);
+                            $itemIsOrtho = (bool) ($itemTreatment->is_ortho_related ?? false);
+                            $itemIsProsto = (bool) ($itemTreatment->is_prosto_related ?? false);
                         @endphp
                         <tr>
                             <td style="font-weight:900;">
                                 {{ $itemTreatment?->name ?? '-' }}
                                 @if((int) ($itemTreatment->is_free ?? 0) === 1)
                                     <span class="free-pill">FREE</span>
+                                @endif
+                                @if($itemIsOrtho)
+                                    <span class="free-pill" style="background:#ffedd5;color:#9a3412;border-color:#fdba74;">ORTHO</span>
+                                @endif
+                                @if($itemIsProsto)
+                                    <span class="free-pill" style="background:#dbeafe;color:#1d4ed8;border-color:#93c5fd;">PROSTO</span>
                                 @endif
                                 <div class="muted" style="font-size:12px;margin-top:4px;">
                                     Mode Harga:
@@ -709,43 +789,6 @@
                     @endforelse
                 </tbody>
             </table>
-        </div>
-    </div>
-
-    <div class="card mb20" id="ortho_case_mode_card" style="{{ $showOrthoSectionInitially ? '' : 'display:none;' }}">
-        <div class="card-h">
-            <h2 style="font-size:18px;font-weight:900;margin:0;">Mode Kasus Ortho</h2>
-            <div class="muted" id="ortho_case_mode_hint">
-                Muncul otomatis saat tindakan ortho dipilih
-            </div>
-        </div>
-
-        <div class="card-b">
-            <form method="POST" action="{{ route('income.update', ['income' => $incomeTransaction->id]) }}" class="grid2">
-                @csrf
-                @method('PUT')
-
-                <input type="hidden" name="trx_date" value="{{ old('trx_date', $trxDateValue) }}">
-                <input type="hidden" name="doctor_id" value="{{ old('doctor_id', $incomeTransaction->doctor_id) }}">
-                <input type="hidden" name="patient_name" value="{{ old('patient_name', $incomeTransaction->patient?->name) }}">
-                <input type="hidden" name="patient_phone" value="{{ old('patient_phone', $incomeTransaction->patient?->phone) }}">
-                <input type="hidden" name="payer_type" value="{{ $payerType }}">
-                <input type="hidden" name="visibility" value="{{ old('visibility', $incomeTransaction->visibility) }}">
-                <input type="hidden" name="notes" value="{{ old('notes', $incomeTransaction->notes) }}">
-
-                <div>
-                    <label class="label">Mode Kasus Ortho</label>
-                    <select name="ortho_case_mode" id="ortho_case_mode_select" class="select">
-                        <option value="none" @selected($orthoCaseMode === 'none')>BUKAN KASUS ORTHO</option>
-                        <option value="biasa" @selected($orthoCaseMode === 'biasa')>ORTHO BIASA</option>
-                        <option value="lanjutan" @selected($orthoCaseMode === 'lanjutan')>ORTHO LANJUTAN</option>
-                    </select>
-                </div>
-
-                <div style="grid-column:1/-1;display:flex;justify-content:flex-end;">
-                    <button type="submit" class="btn btn-primary">Simpan Mode Ortho</button>
-                </div>
-            </form>
         </div>
     </div>
 
@@ -1168,15 +1211,16 @@
             const submitPayBtn = document.getElementById('submitPayBtn');
             const paymentLockOverlay = document.getElementById('paymentLockOverlay');
 
-            const orthoCaseModeCardEl = document.getElementById('ortho_case_mode_card');
-            const orthoCaseModeHintEl = document.getElementById('ortho_case_mode_hint');
             const orthoAutoNoticeWrapEl = document.getElementById('ortho_auto_notice_wrap');
-            const orthoCaseModeSelectEl = document.getElementById('ortho_case_mode_select');
+            const orthoCaseModeInlineWrapEl = document.getElementById('ortho_case_mode_inline_wrap');
+            const orthoCaseModeSelectInlineEl = document.getElementById('ortho_case_mode_select_inline');
+            const prostoAutoNoticeWrapEl = document.getElementById('prosto_auto_notice_wrap');
+            const prostoCaseModeInlineWrapEl = document.getElementById('prosto_case_mode_inline_wrap');
+            const prostoCaseModeSelectInlineEl = document.getElementById('prosto_case_mode_select_inline');
 
             const addItemAnchorEl = document.getElementById('add-item-form');
             const addItemFormEl = document.getElementById('addItemForm');
             const freeTreatmentBtnEl = document.getElementById('freeTreatmentBtn');
-            const sectionPembayaranEl = document.getElementById('sectionPembayaran');
 
             function updatePreview() {
                 if (!qtyEl || !unitPriceEl || !discountAmountEl) return;
@@ -1276,28 +1320,47 @@
 
             function isSelectedTreatmentOrtho() {
                 if (!treatmentSelectEl) return false;
-
                 const opt = treatmentSelectEl.options[treatmentSelectEl.selectedIndex];
                 if (!opt || !opt.value) return false;
-
                 return (opt.getAttribute('data-is-ortho') || '0') === '1';
             }
 
+            function isSelectedTreatmentProsto() {
+                if (!treatmentSelectEl) return false;
+                const opt = treatmentSelectEl.options[treatmentSelectEl.selectedIndex];
+                if (!opt || !opt.value) return false;
+                return (opt.getAttribute('data-is-prosto') || '0') === '1';
+            }
+
             function syncOrthoCaseModeVisibility() {
-                if (!orthoCaseModeCardEl) return;
-
-                const shouldShow = isSelectedTreatmentOrtho() || ((orthoCaseModeSelectEl && orthoCaseModeSelectEl.value !== 'none'));
-
-                orthoCaseModeCardEl.style.display = shouldShow ? '' : 'none';
+                const isOrtho = isSelectedTreatmentOrtho();
 
                 if (orthoAutoNoticeWrapEl) {
-                    orthoAutoNoticeWrapEl.style.display = isSelectedTreatmentOrtho() ? '' : 'none';
+                    orthoAutoNoticeWrapEl.style.display = isOrtho ? '' : 'none';
                 }
 
-                if (orthoCaseModeHintEl) {
-                    orthoCaseModeHintEl.textContent = isSelectedTreatmentOrtho()
-                        ? 'Tindakan ortho terdeteksi. Silakan pilih mode kasus ortho.'
-                        : 'Muncul otomatis saat tindakan ortho dipilih';
+                if (orthoCaseModeInlineWrapEl) {
+                    orthoCaseModeInlineWrapEl.style.display = isOrtho ? '' : 'none';
+                }
+
+                if (!isOrtho && orthoCaseModeSelectInlineEl) {
+                    orthoCaseModeSelectInlineEl.value = 'none';
+                }
+            }
+
+            function syncProstoVisibility() {
+                const isProsto = isSelectedTreatmentProsto();
+
+                if (prostoAutoNoticeWrapEl) {
+                    prostoAutoNoticeWrapEl.style.display = isProsto ? '' : 'none';
+                }
+
+                if (prostoCaseModeInlineWrapEl) {
+                    prostoCaseModeInlineWrapEl.style.display = isProsto ? '' : 'none';
+                }
+
+                if (!isProsto && prostoCaseModeSelectInlineEl) {
+                    prostoCaseModeSelectInlineEl.value = 'none';
                 }
             }
 
@@ -1330,6 +1393,7 @@
                     }
 
                     syncOrthoCaseModeVisibility();
+                    syncProstoVisibility();
                     updatePreview();
                     return;
                 }
@@ -1339,6 +1403,8 @@
                 const notesHint = opt.getAttribute('data-notes-hint') || '';
                 const treatmentName = opt.text || 'Treatment';
                 const isFreeTreatment = (opt.getAttribute('data-is-free') || '0') === '1';
+                const isOrthoTreatment = (opt.getAttribute('data-is-ortho') || '0') === '1';
+                const isProstoTreatment = (opt.getAttribute('data-is-prosto') || '0') === '1';
 
                 if (freeTreatmentNoticeEl) {
                     freeTreatmentNoticeEl.style.display = 'none';
@@ -1391,6 +1457,7 @@
 
                 if (treatmentModeInfoEl && treatmentModeTitleEl && treatmentModeDescEl) {
                     treatmentModeInfoEl.style.display = '';
+
                     if (isFreeTreatment) {
                         treatmentModeInfoEl.className = 'fixed-box';
                         treatmentModeTitleEl.textContent = 'Treatment Gratis';
@@ -1403,6 +1470,13 @@
                         treatmentModeInfoEl.className = 'fixed-box';
                         treatmentModeTitleEl.textContent = 'Mode Harga Tetap';
                         treatmentModeDescEl.textContent = treatmentName + ' menggunakan harga otomatis dari Master Tindakan.';
+                    }
+
+                    if (isOrthoTreatment) {
+                        treatmentModeDescEl.textContent += ' Treatment ini ditandai sebagai terkait ORTHO.';
+                    }
+                    if (isProstoTreatment) {
+                        treatmentModeDescEl.textContent += ' Treatment ini ditandai sebagai terkait PROSTO.';
                     }
                 }
 
@@ -1417,6 +1491,7 @@
                 }
 
                 syncOrthoCaseModeVisibility();
+                syncProstoVisibility();
                 updatePreview();
             }
 
@@ -1551,22 +1626,6 @@
                 }, 350);
             }
 
-            function goToPaymentSection() {
-                if (!sectionPembayaranEl || !paymentRowsWrapper) return;
-
-                sectionPembayaranEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-                setTimeout(function () {
-                    const firstRow = paymentRowsWrapper ? paymentRowsWrapper.querySelector('.payment-row-item') : null;
-                    if (!firstRow) return;
-
-                    const methodSelect = firstRow.querySelector('.payment-method-select');
-                    if (methodSelect) {
-                        methodSelect.focus();
-                    }
-                }, 400);
-            }
-
             function handlePostAddItemFlow() {
                 const hash = window.location.hash || '';
                 const isAddItemHash = hash === '#add-item-form';
@@ -1586,29 +1645,11 @@
                     && hasSuccessMessage.toLowerCase().includes('item tindakan berhasil ditambahkan');
 
                 if (!hasAddItemSuccess) return;
-                if (!showPaymentMethodSection) return;
 
                 setTimeout(function () {
-                    if (billTotalBase > 0) {
-                        goToPaymentSection();
-
-                        if (!paymentRowsWrapper) return;
-
-                        const rows = paymentRowsWrapper.querySelectorAll('.payment-row-item');
-                        let hasValue = false;
-
-                        rows.forEach(function (row) {
-                            const input = row.querySelector('.payment-amount-input');
-                            if (input && parseRupiahToNumber(input.value || '0') > 0) {
-                                hasValue = true;
-                            }
-                        });
-
-                        if (!hasValue && btnBayarPas) {
-                            btnBayarPas.click();
-                        }
-                    }
-                }, 300);
+                    scrollToAddItemArea();
+                    focusTreatmentField();
+                }, 250);
             }
 
             function handleBayarPas() {
@@ -1681,6 +1722,11 @@
                     syncTreatmentPriceUI();
 
                     setTimeout(function () {
+                        if (orthoCaseModeInlineWrapEl && orthoCaseModeInlineWrapEl.style.display !== 'none' && orthoCaseModeSelectInlineEl) {
+                            orthoCaseModeSelectInlineEl.focus();
+                            return;
+                        }
+
                         if (qtyEl) {
                             qtyEl.focus();
                             qtyEl.select && qtyEl.select();
@@ -1771,8 +1817,22 @@
                 });
             });
 
-            if (orthoCaseModeSelectEl) {
-                orthoCaseModeSelectEl.addEventListener('change', syncOrthoCaseModeVisibility);
+            if (orthoCaseModeSelectInlineEl) {
+                orthoCaseModeSelectInlineEl.addEventListener('change', function () {
+                    if (!isSelectedTreatmentOrtho()) {
+                        orthoCaseModeSelectInlineEl.value = 'none';
+                    }
+                    syncOrthoCaseModeVisibility();
+                });
+            }
+
+            if (prostoCaseModeSelectInlineEl) {
+                prostoCaseModeSelectInlineEl.addEventListener('change', function () {
+                    if (!isSelectedTreatmentProsto()) {
+                        prostoCaseModeSelectInlineEl.value = 'none';
+                    }
+                    syncProstoVisibility();
+                });
             }
 
             if (paymentRowsWrapper) {
@@ -1792,6 +1852,7 @@
 
             syncTreatmentPriceUI();
             syncOrthoCaseModeVisibility();
+            syncProstoVisibility();
             updatePreview();
 
             if (paymentRowsWrapper) {

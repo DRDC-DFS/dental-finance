@@ -144,6 +144,148 @@
             </div>
         </div>
 
+        {{-- ========================= OWNER CONTROL TOWER ========================= --}}
+        <div class="row g-3 mb-4">
+            <div class="col-md-6 col-xl-3">
+                <div class="card shadow-sm border-0 h-100" style="border-left:6px solid #dc3545 !important;">
+                    <div class="card-body">
+                        <div class="text-muted small">Dana Tertahan Owner Finance</div>
+                        <div class="fs-5 fw-bold text-danger">{{ format_rupiah($ownerTotalHoldingFunds ?? 0) }}</div>
+                        <div class="mt-2 text-muted small">
+                            Kasus belum lengkap / belum siap diakui
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-xl-3">
+                <div class="card shadow-sm border-0 h-100" style="border-left:6px solid #0d6efd !important;">
+                    <div class="card-body">
+                        <div class="text-muted small">Dana Berjalan Owner Finance</div>
+                        <div class="fs-5 fw-bold text-primary">{{ format_rupiah($ownerTotalRunningFunds ?? 0) }}</div>
+                        <div class="mt-2 text-muted small">
+                            Kasus sedang follow-up / proses owner
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-xl-3">
+                <div class="card shadow-sm border-0 h-100" style="border-left:6px solid #198754 !important;">
+                    <div class="card-body">
+                        <div class="text-muted small">Income Owner Finance Diakui</div>
+                        <div class="fs-5 fw-bold text-success">{{ format_rupiah($ownerTotalRecognizedIncome ?? 0) }}</div>
+                        <div class="mt-2 text-muted small">
+                            Sudah punya revenue_recognized_at
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-xl-3">
+                <div class="card shadow-sm border-0 h-100" style="border-left:6px solid #f59e0b !important;">
+                    <div class="card-body">
+                        <div class="text-muted small">Potensi Income Belum Jadi</div>
+                        <div class="fs-5 fw-bold text-warning">{{ format_rupiah($ownerTotalPotentialIncome ?? 0) }}</div>
+                        <div class="mt-2 text-muted small">
+                            Belum punya pengakuan pendapatan
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4" style="border-left:6px solid #0d6efd !important;">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span>🎯 Top 5 Kasus Prioritas Owner</span>
+                <a href="{{ route('owner_finance.index', ['tab' => 'needs_setup']) }}" class="btn btn-sm btn-outline-primary">
+                    Buka Monitoring
+                </a>
+            </div>
+            <div class="card-body">
+                @php
+                    $priorityCases = ($ownerPriorityCases ?? collect());
+
+                    if ($priorityCases->count() === 0 && ($ownerFinanceAlerts ?? collect())->count() > 0) {
+                        $priorityCases = $ownerFinanceAlerts->take(5);
+                    }
+                @endphp
+
+                @if($priorityCases->count() > 0)
+                    <div class="mb-2 text-muted small">
+                        Kasus ditampilkan berdasarkan prioritas tindakan owner, bukan sekadar urutan terbaru.
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>Invoice</th>
+                                    <th>Pasien</th>
+                                    <th>Dokter</th>
+                                    <th>Tipe Kasus</th>
+                                    <th>Status</th>
+                                    <th>Posisi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($priorityCases as $case)
+                                    @php
+                                        $caseTypeLabel = match ((string) ($case->case_type ?? '')) {
+                                            'prostodonti' => 'Prostodonti',
+                                            'ortho' => 'Ortho',
+                                            'retainer' => 'Retainer',
+                                            'lab' => 'Dental Laboratory',
+                                            default => ucfirst((string) ($case->case_type ?? '-')),
+                                        };
+
+                                        if ((bool) ($case->needs_setup ?? false) || (($case->owner_followup_status ?? null) === 'needs_setup')) {
+                                            $statusLabel = 'BUTUH DILENGKAPI';
+                                            $statusClass = 'bg-danger';
+                                        } elseif (in_array((string) ($case->owner_followup_status ?? ''), ['followed_up', 'in_progress'], true)) {
+                                            $statusLabel = 'BERJALAN';
+                                            $statusClass = 'bg-primary';
+                                        } else {
+                                            $statusLabel = 'SELESAI';
+                                            $statusClass = 'bg-success';
+                                        }
+
+                                        if (!(bool) ($case->lab_paid ?? false) && !(bool) ($case->installed ?? false)) {
+                                            $positionLabel = 'LAB & pemasangan belum';
+                                            $positionClass = 'bg-warning text-dark';
+                                        } elseif (!(bool) ($case->lab_paid ?? false)) {
+                                            $positionLabel = 'LAB belum dibayar';
+                                            $positionClass = 'bg-warning text-dark';
+                                        } elseif (!(bool) ($case->installed ?? false)) {
+                                            $positionLabel = 'Belum terpasang';
+                                            $positionClass = 'bg-secondary';
+                                        } else {
+                                            $positionLabel = 'Siap / lengkap';
+                                            $positionClass = 'bg-success';
+                                        }
+                                    @endphp
+                                    <tr>
+                                        <td>{{ $case->trx_date ? \Carbon\Carbon::parse($case->trx_date)->format('d-m-Y') : '-' }}</td>
+                                        <td class="fw-semibold">{{ $case->invoice_number ?? '-' }}</td>
+                                        <td>{{ $case->patient_name ?? '-' }}</td>
+                                        <td>{{ $case->doctor_name ?? '-' }}</td>
+                                        <td><span class="badge bg-secondary">{{ $caseTypeLabel }}</span></td>
+                                        <td><span class="badge {{ $statusClass }}">{{ $statusLabel }}</span></td>
+                                        <td><span class="badge {{ $positionClass }}">{{ $positionLabel }}</span></td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="text-success fw-semibold">
+                        Tidak ada kasus prioritas owner saat ini. Semua relatif aman.
+                    </div>
+                @endif
+            </div>
+        </div>
+
         <div class="card shadow-sm border-0 mb-4" style="border-left:6px solid #f59e0b !important;">
             <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
                 <span>⚠ Alert Stok Minimum</span>

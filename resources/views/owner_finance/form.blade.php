@@ -63,7 +63,13 @@
 
     $trxPayTotal = (float) ($trx->pay_total ?? 0);
     $labBillAmount = (float) ($ownerFinanceCase->lab_bill_amount ?? 0);
-    $clinicIncomeAmount = (float) ($ownerFinanceCase->clinic_income_amount ?? max(0, $trxPayTotal - $labBillAmount));
+    $clinicIncomeAmount = (float) ($ownerFinanceCase->clinic_income_amount ?? 0);
+
+    $clinicIncomePreviewValue = ($isEdit && $isProsthoCase)
+        ? 'Rp ' . number_format($clinicIncomeAmount, 0, ',', '.')
+        : 'Akan dihitung otomatis saat disimpan';
+
+    $revenueRecognizedPreviewValue = $formatDateTime($ownerFinanceCase->revenue_recognized_at);
 
     $specialCasePaymentLabel = $isDentalLaboratoryCase ? 'Pembayaran Dental Laboratory' : 'Biaya Dental Laboratory (Vendor)';
     $specialCaseIncomeLabel = 'Pendapatan Klinik';
@@ -200,6 +206,16 @@
                             </div>
                         </div>
 
+                        <div class="col-md-3">
+                            <div class="small text-muted">Tanggal Pembayaran Lab</div>
+                            <div class="fw-semibold">{{ $formatTanggal(optional($ownerFinanceCase->lab_paid_at)->format('Y-m-d')) }}</div>
+                        </div>
+
+                        <div class="col-md-3">
+                            <div class="small text-muted">Tanggal Pemasangan</div>
+                            <div class="fw-semibold">{{ $formatTanggal(optional($ownerFinanceCase->installed_at)->format('Y-m-d')) }}</div>
+                        </div>
+
                         @if($isProsthoCase)
                             <div class="col-md-3">
                                 <div class="small text-muted">Jenis Kasus Khusus</div>
@@ -278,12 +294,36 @@
                         </select>
                     </div>
 
+                    <div class="col-md-4 all-case-date-block" id="lab_paid_date_block">
+                        <label class="form-label">Tanggal Pembayaran Lab</label>
+                        <input type="date"
+                               name="lab_paid_at"
+                               id="lab_paid_at"
+                               class="form-control"
+                               value="{{ old('lab_paid_at', optional($ownerFinanceCase->lab_paid_at)->format('Y-m-d')) }}">
+                        <div class="form-text">
+                            Isi tanggal real saat pembayaran Lab dilakukan. Boleh tanggal lampau.
+                        </div>
+                    </div>
+
                     <div class="col-md-4">
                         <label class="form-label">Sudah Terpasang?</label>
                         <select name="installed" id="installed" class="form-select">
                             <option value="0" @selected((string) old('installed', (int) ($ownerFinanceCase->installed ?? false)) === '0')>Belum</option>
                             <option value="1" @selected((string) old('installed', (int) ($ownerFinanceCase->installed ?? false)) === '1')>Sudah</option>
                         </select>
+                    </div>
+
+                    <div class="col-md-4 all-case-date-block" id="installed_date_block">
+                        <label class="form-label">Tanggal Pemasangan</label>
+                        <input type="date"
+                               name="installed_at"
+                               id="installed_at"
+                               class="form-control"
+                               value="{{ old('installed_at', optional($ownerFinanceCase->installed_at)->format('Y-m-d')) }}">
+                        <div class="form-text">
+                            Isi tanggal real saat kasus selesai dipasang. Boleh tanggal lampau.
+                        </div>
                     </div>
 
                     <div class="col-md-4 ortho-only">
@@ -379,10 +419,10 @@
                         <input type="text"
                                id="clinic_income_preview"
                                class="form-control"
-                               value="Rp {{ number_format($clinicIncomeAmount, 0, ',', '.') }}"
+                               value="{{ $clinicIncomePreviewValue }}"
                                readonly>
                         <div class="form-text">
-                            Preview sementara dari transaksi utama yang tercatat saat ini, dikurangi pembayaran Dental Laboratory vendor.
+                            Nilai final hanya mengikuti <b>clinic_income_amount</b> yang disimpan oleh sistem saat proses simpan/sync, bukan hasil hitung di tampilan ini.
                         </div>
                     </div>
 
@@ -391,10 +431,10 @@
                         <input type="text"
                                id="revenue_recognized_preview"
                                class="form-control"
-                               value="{{ $formatDateTime($ownerFinanceCase->revenue_recognized_at) }}"
+                               value="{{ $revenueRecognizedPreviewValue }}"
                                readonly>
                         <div class="form-text">
-                            Akan otomatis terisi hanya jika <b>Dental Laboratory sudah dibayar</b> dan <b>kasus sudah terpasang</b>.
+                            Akan otomatis mengikuti tanggal real saat syarat lengkap terpenuhi, bukan tanggal hari ini.
                         </div>
                     </div>
 
@@ -421,6 +461,7 @@
                         <li><b>Mutasi akun owner</b> otomatis disinkronkan ke laporan owner berdasarkan ledger bulanan.</li>
                         <li>Kasus <b>Ortho</b> dinyatakan <b>SELESAI</b> hanya jika <b>Dental Laboratory sudah dibayar</b>, <b>sudah terpasang</b>, dan <b>sisa dana = 0</b>.</li>
                         <li>Kasus <b>Prostodonti / Retainer / Dental Laboratory</b> dapat menyimpan <b>jenis kasus</b>, <b>detail kerja untuk Dental Laboratory</b>, dan <b>pembayaran Dental Laboratory vendor</b>.</li>
+                        <li>Untuk semua kasus Owner Finance, <b>tanggal pembayaran Lab</b> dan <b>tanggal pemasangan</b> dapat diisi manual agar data yang terlambat diinput tetap mengikuti tanggal real.</li>
                         <li>Untuk kasus khusus berbasis Dental Laboratory, <b>pendapatan klinik</b> baru diakui jika <b>Dental Laboratory sudah dibayar</b> dan <b>sudah terpasang</b>.</li>
                     </ul>
                 </div>
@@ -716,31 +757,60 @@
     const installedEl = document.getElementById('installed');
     const orthoBlocks = document.querySelectorAll('.ortho-only');
     const prosthoBlocks = document.querySelectorAll('.prostho-only');
-    const labBillAmountEl = document.getElementById('lab_bill_amount');
-    const clinicIncomePreviewEl = document.getElementById('clinic_income_preview');
+    const allCaseDateBlocks = document.querySelectorAll('.all-case-date-block');
     const revenueRecognizedPreviewEl = document.getElementById('revenue_recognized_preview');
-    const trxPayTotal = Number(@json($trxPayTotal));
+    const labPaidDateBlock = document.getElementById('lab_paid_date_block');
+    const installedDateBlock = document.getElementById('installed_date_block');
+    const labPaidAtEl = document.getElementById('lab_paid_at');
+    const installedAtEl = document.getElementById('installed_at');
 
-    function formatRp(num) {
-        const n = Math.max(0, Math.round(Number(num) || 0));
-        return 'Rp ' + n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    function updateRevenuePreviewText() {
+        if (!revenueRecognizedPreviewEl) return;
+
+        const labPaid = labPaidEl ? labPaidEl.value === '1' : false;
+        const installed = installedEl ? installedEl.value === '1' : false;
+        const labPaidAt = labPaidAtEl ? labPaidAtEl.value : '';
+        const installedAt = installedAtEl ? installedAtEl.value : '';
+
+        if (labPaid && installed && (labPaidAt || installedAt)) {
+            revenueRecognizedPreviewEl.value = 'Akan mengikuti tanggal real terakhir saat disimpan';
+            return;
+        }
+
+        if (labPaid && installed) {
+            revenueRecognizedPreviewEl.value = 'Akan diisi sistem saat disimpan';
+            return;
+        }
+
+        if (labPaid && labPaidAt) {
+            revenueRecognizedPreviewEl.value = 'Menunggu tanggal pemasangan';
+            return;
+        }
+
+        if (installed && installedAt) {
+            revenueRecognizedPreviewEl.value = 'Menunggu tanggal pembayaran lab';
+            return;
+        }
+
+        revenueRecognizedPreviewEl.value = '-';
     }
 
-    function updateProsthoPreview() {
-        if (!clinicIncomePreviewEl) return;
+    function toggleDateFields() {
+        const labPaid = labPaidEl ? labPaidEl.value === '1' : false;
+        const installed = installedEl ? installedEl.value === '1' : false;
 
-        const labBill = labBillAmountEl ? Number(toDigits(labBillAmountEl.value || '0')) : 0;
-        const clinicIncome = Math.max(0, trxPayTotal - labBill);
+        if (labPaidDateBlock) {
+            labPaidDateBlock.style.display = labPaid ? '' : 'none';
+            if (!labPaid && labPaidAtEl) {
+                labPaidAtEl.value = '';
+            }
+        }
 
-        clinicIncomePreviewEl.value = formatRp(clinicIncome);
-
-        if (revenueRecognizedPreviewEl) {
-            const labPaid = labPaidEl ? labPaidEl.value === '1' : false;
-            const installed = installedEl ? installedEl.value === '1' : false;
-
-            revenueRecognizedPreviewEl.value = (labPaid && installed)
-                ? 'Otomatis saat disimpan'
-                : '-';
+        if (installedDateBlock) {
+            installedDateBlock.style.display = installed ? '' : 'none';
+            if (!installed && installedAtEl) {
+                installedAtEl.value = '';
+            }
         }
     }
 
@@ -757,26 +827,43 @@
             el.style.display = isProstho ? '' : 'none';
         });
 
-        updateProsthoPreview();
+        allCaseDateBlocks.forEach(function (el) {
+            el.style.display = '';
+        });
+
+        toggleDateFields();
+        updateRevenuePreviewText();
     }
 
     if (caseTypeEl) {
         caseTypeEl.addEventListener('change', syncCaseTypeUI);
     }
 
-    if (labBillAmountEl) {
-        labBillAmountEl.addEventListener('input', updateProsthoPreview);
-    }
-
     if (labPaidEl) {
-        labPaidEl.addEventListener('change', updateProsthoPreview);
+        labPaidEl.addEventListener('change', function () {
+            toggleDateFields();
+            updateRevenuePreviewText();
+        });
     }
 
     if (installedEl) {
-        installedEl.addEventListener('change', updateProsthoPreview);
+        installedEl.addEventListener('change', function () {
+            toggleDateFields();
+            updateRevenuePreviewText();
+        });
+    }
+
+    if (labPaidAtEl) {
+        labPaidAtEl.addEventListener('change', updateRevenuePreviewText);
+    }
+
+    if (installedAtEl) {
+        installedAtEl.addEventListener('change', updateRevenuePreviewText);
     }
 
     syncCaseTypeUI();
+    toggleDateFields();
+    updateRevenuePreviewText();
 })();
 </script>
 @endsection

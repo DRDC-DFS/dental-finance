@@ -13,65 +13,79 @@ class OwnerFinanceCaseService
     {
         $transaction->loadMissing([
             'items.treatment.category',
-            'ownerFinanceCase',
+            'ownerFinanceCases',
         ]);
 
-        $detectedCaseType = null;
+        $detectedCaseTypes = [];
 
         foreach ($transaction->items as $item) {
             $caseType = $this->detectCaseTypeFromTransactionItem($item, $transaction);
 
             if ($caseType !== null) {
-                $detectedCaseType = $caseType;
-                break;
+                $detectedCaseTypes[$caseType] = $caseType;
             }
         }
 
-        $existingCase = $transaction->ownerFinanceCase;
+        $detectedCaseTypes = array_values($detectedCaseTypes);
 
-        if ($detectedCaseType === null) {
-            if ($existingCase && !$this->canSafelyDeleteCase($existingCase)) {
-                $this->refreshDerivedFields($existingCase);
+        $existingCases = $transaction->ownerFinanceCases()
+            ->get()
+            ->keyBy(function ($case) {
+                return (string) $case->case_type;
+            });
+
+        foreach ($detectedCaseTypes as $detectedCaseType) {
+            $existingCase = $existingCases->get($detectedCaseType);
+
+            $case = $existingCase ?: new OwnerFinanceCase();
+            $isNew = !$case->exists;
+
+            if ($isNew) {
+                $case->income_transaction_id = (int) $transaction->id;
+                $case->created_by = Auth::id();
+                $case->is_active = true;
+            }
+
+            $oldCaseType = (string) ($case->case_type ?? '');
+            $case->case_type = $detectedCaseType;
+
+            $this->normalizeCaseFields($case, $oldCaseType, $detectedCaseType);
+
+            if ($isNew) {
+                $this->fillDefaultOwnerState($case);
+            } else {
+                $this->ensureOwnerStateDefaults($case);
+            }
+
+            /**
+             * PENTING:
+             * Setiap sync dari transaksi harus menyesuaikan data turunan
+             * agar data lama otomatis mengikuti logika terbaru.
+             */
+            $this->refreshDerivedFields($case, true);
+
+            if ($this->isCaseDone($case) && empty($case->owner_last_action_note)) {
+                $case->owner_last_action_note = 'Kasus selesai';
+            }
+
+            $case->updated_by = Auth::id();
+            $case->save();
+        }
+
+        foreach ($existingCases as $existingType => $existingCase) {
+            if (in_array($existingType, $detectedCaseTypes, true)) {
+                continue;
+            }
+
+            if (!$this->canSafelyDeleteCase($existingCase)) {
+                $this->refreshDerivedFields($existingCase, true);
                 $existingCase->updated_by = Auth::id();
                 $existingCase->save();
-                return;
+                continue;
             }
 
-            if ($existingCase) {
-                $existingCase->delete();
-            }
-
-            return;
+            $existingCase->delete();
         }
-
-        $case = $existingCase ?: new OwnerFinanceCase();
-        $isNew = !$case->exists;
-
-        if ($isNew) {
-            $case->income_transaction_id = (int) $transaction->id;
-            $case->created_by = Auth::id();
-            $case->is_active = true;
-        }
-
-        $oldCaseType = (string) ($case->case_type ?? '');
-        $case->case_type = $detectedCaseType;
-
-        $this->normalizeCaseFields($case, $oldCaseType, $detectedCaseType);
-
-        if ($isNew) {
-            $this->fillDefaultOwnerState($case);
-        } else {
-            $this->ensureOwnerStateDefaults($case);
-        }
-
-        $this->refreshDerivedFields($case);
-
-        if ($this->isCaseDone($case) && empty($case->owner_last_action_note)) {
-            $case->owner_last_action_note = 'Kasus selesai';
-        }
-
-        $case->updated_by = Auth::id();
-        $case->save();
     }
 
     public function detectCaseTypeFromTransactionItem(IncomeTransactionItem $item, ?IncomeTransaction $transaction = null): ?string
@@ -97,14 +111,6 @@ class OwnerFinanceCaseService
 
         $orthoCaseMode = $this->normalizeOrthoCaseMode((string) ($transaction?->ortho_case_mode ?? 'none'));
 
-        /**
-         * RULE FINAL ORTHO:
-         * - ortho_case_mode = biasa     => TIDAK masuk Owner Finance
-         * - ortho_case_mode = lanjutan  => masuk Owner Finance sebagai case_type = ortho
-         *
-         * Fallback legacy tetap dipertahankan bila field masih kosong/null pada data lama,
-         * agar transaksi lama yang dulu dipicu dari nama treatment tidak rusak.
-         */
         if ($orthoCaseMode === 'lanjutan' && $this->isOrthoRelatedItem($categoryName, $treatmentName)) {
             return 'ortho';
         }
@@ -125,6 +131,16 @@ class OwnerFinanceCaseService
             ])
         ) {
             return 'ortho';
+        }
+
+        $prostoCaseMode = $this->normalizeProstoCaseMode((string) ($transaction?->prosto_case_mode ?? 'none'));
+
+        if ($prostoCaseMode === 'lanjutan' && $this->isProstoRelatedItem($categoryName, $treatmentName)) {
+            return 'prostodonti';
+        }
+
+        if ($prostoCaseMode === 'biasa') {
+            return null;
         }
 
         if (
@@ -298,27 +314,54 @@ class OwnerFinanceCaseService
         return max(0, round($allocation - $paid, 2));
     }
 
-    private function refreshDerivedFields(OwnerFinanceCase $case): void
+    private function refreshDerivedFields(OwnerFinanceCase $case, bool $forceRewriteFromTransaction = false): void
     {
-        $case->loadMissing('incomeTransaction');
+        $case->loadMissing([
+            'incomeTransaction.items.treatment.category',
+            'incomeTransaction',
+        ]);
 
-        $case->ortho_remaining_balance = $this->calculateOrthoRemainingBalance($case);
+        $transaction = $case->incomeTransaction;
+        $caseAmount = $this->calculateCaseAmountFromTransaction($case, $transaction);
 
-        if (in_array((string) $case->case_type, ['prostodonti', 'retainer', 'lab'], true)) {
-            $payTotal = (float) ($case->incomeTransaction?->pay_total ?? 0);
-            $labBillAmount = max(0, (float) ($case->lab_bill_amount ?? 0));
-
-            if ($labBillAmount > $payTotal && $payTotal > 0) {
-                $labBillAmount = $payTotal;
+        if ($case->case_type === 'ortho') {
+            /**
+             * ATURAN BARU:
+             * Saat sync transaksi/update transaksi, alokasi ortho harus
+             * selalu mengikuti subtotal item ortho agar data lama ikut diperbaiki.
+             */
+            if ($forceRewriteFromTransaction) {
+                $case->ortho_allocation_amount = round($caseAmount, 2);
+            } elseif ((float) ($case->ortho_allocation_amount ?? 0) <= 0) {
+                $case->ortho_allocation_amount = round($caseAmount, 2);
             }
 
-            $case->lab_bill_amount = round($labBillAmount, 2);
-            $case->clinic_income_amount = max(0, round($payTotal - $labBillAmount, 2));
+            // ortho_paid_amount tetap milik owner, jangan ditimpa otomatis
+            $case->ortho_remaining_balance = $this->calculateOrthoRemainingBalance($case);
+        } else {
+            $case->ortho_remaining_balance = 0;
+        }
 
+        if (in_array((string) $case->case_type, ['prostodonti', 'retainer', 'lab'], true)) {
+            /**
+             * SINGLE SOURCE OF TRUTH:
+             * clinic_income_amount dan lab_bill_amount harus disimpan final di DB
+             * dari service ini. View/controller tidak boleh hitung ulang lagi.
+             */
+            $grossCaseAmount = max(0, round($caseAmount, 2));
+            $labBillAmount = $this->normalizeLabBillAmount($case, $grossCaseAmount);
+
+            $case->lab_bill_amount = $labBillAmount;
+            $case->clinic_income_amount = max(0, round($grossCaseAmount - $labBillAmount, 2));
+
+            /**
+             * REVENUE RECOGNIZED:
+             * - Diakui hanya jika lab_paid && installed
+             * - Gunakan tanggal real terakhir
+             * - Bukan tanggal save
+             */
             if ((bool) $case->lab_paid && (bool) $case->installed) {
-                if (!$case->revenue_recognized_at) {
-                    $case->revenue_recognized_at = now();
-                }
+                $case->revenue_recognized_at = $this->resolveRevenueRecognizedAt($case, $transaction);
             } else {
                 $case->revenue_recognized_at = null;
             }
@@ -326,6 +369,104 @@ class OwnerFinanceCaseService
 
         $case->case_progress_status = $this->determineProgressStatus($case);
         $case->owner_followup_status = $this->determineFollowupStatus($case);
+    }
+
+    private function calculateCaseAmountFromTransaction(OwnerFinanceCase $case, ?IncomeTransaction $transaction): float
+    {
+        if (!$transaction) {
+            return 0;
+        }
+
+        $items = $transaction->items ?? collect();
+        $sum = 0.0;
+        $targetCaseType = (string) ($case->case_type ?? '');
+
+        foreach ($items as $item) {
+            $itemCaseType = $this->detectCaseTypeFromTransactionItem($item, $transaction);
+
+            if ($itemCaseType === $targetCaseType) {
+                $sum += (float) ($item->subtotal ?? 0);
+            }
+        }
+
+        return round($sum, 2);
+    }
+
+    private function normalizeLabBillAmount(OwnerFinanceCase $case, float $grossCaseAmount): float
+    {
+        $labBillAmount = max(0, (float) ($case->lab_bill_amount ?? 0));
+
+        if ($grossCaseAmount <= 0) {
+            return 0;
+        }
+
+        if ($labBillAmount > $grossCaseAmount) {
+            $labBillAmount = $grossCaseAmount;
+        }
+
+        return round($labBillAmount, 2);
+    }
+
+    private function resolveRevenueRecognizedAt(OwnerFinanceCase $case, ?IncomeTransaction $transaction = null)
+    {
+        $labPaidAt = $this->resolveRealDateValue($case, [
+            'lab_paid_at',
+            'lab_payment_date',
+            'lab_paid_date',
+            'tanggal_bayar_lab',
+            'lab_payment_at',
+        ]);
+
+        $installedAt = $this->resolveRealDateValue($case, [
+            'installed_at',
+            'installation_date',
+            'installed_date',
+            'tanggal_pemasangan',
+            'placement_date',
+        ]);
+
+        $timestamps = array_values(array_filter([
+            $labPaidAt ? strtotime($labPaidAt) : null,
+            $installedAt ? strtotime($installedAt) : null,
+        ]));
+
+        if (!empty($timestamps)) {
+            return date('Y-m-d H:i:s', max($timestamps));
+        }
+
+        /**
+         * Fallback aman:
+         * Bila field tanggal real belum terisi/berbeda nama di data lama,
+         * gunakan trx_date agar tetap pakai tanggal bisnis, bukan tanggal save/update.
+         */
+        $trxDate = $transaction?->trx_date ?: null;
+
+        if (!empty($trxDate)) {
+            return $trxDate;
+        }
+
+        return null;
+    }
+
+    private function resolveRealDateValue(OwnerFinanceCase $case, array $candidateFields): ?string
+    {
+        foreach ($candidateFields as $field) {
+            $value = $case->getAttribute($field);
+
+            if (empty($value)) {
+                continue;
+            }
+
+            $timestamp = strtotime((string) $value);
+
+            if ($timestamp === false) {
+                continue;
+            }
+
+            return date('Y-m-d H:i:s', $timestamp);
+        }
+
+        return null;
     }
 
     private function canSafelyDeleteCase(OwnerFinanceCase $case): bool
@@ -375,7 +516,37 @@ class OwnerFinanceCaseService
             $this->containsAny($treatmentName, ['ortho', 'ortho', 'behel', 'aligner', 'bracket', 'orthodonti', 'ortodonti']);
     }
 
+    private function isProstoRelatedItem(string $categoryName, string $treatmentName): bool
+    {
+        if ($this->containsAny($categoryName, ['retainer', 'lab', 'laboratory', 'dental laboratory'])) {
+            return false;
+        }
+
+        if ($this->containsAny($treatmentName, ['retainer', 'lab', 'laboratory', 'dental laboratory'])) {
+            return false;
+        }
+
+        return $this->containsAny($categoryName, ['prostodonti', 'prostho', 'prostodonsi']) ||
+            $this->containsAny($treatmentName, [
+                'gigi tiruan',
+                'lepasan',
+                'bridge',
+                'implant',
+                'implan',
+                'valplast',
+                'crown',
+                'veneer',
+            ]);
+    }
+
     private function normalizeOrthoCaseMode(string $value): string
+    {
+        $value = strtolower(trim($value));
+
+        return in_array($value, ['none', 'biasa', 'lanjutan'], true) ? $value : 'none';
+    }
+
+    private function normalizeProstoCaseMode(string $value): string
     {
         $value = strtolower(trim($value));
 

@@ -18,6 +18,7 @@ class IncomeTransaction extends Model
         'patient_id',
         'payer_type',
         'ortho_case_mode',
+        'prosto_case_mode',
         'status',
         'bill_total',
         'doctor_fee_total',
@@ -61,8 +62,26 @@ class IncomeTransaction extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /**
+     * NEW SAFE STRUCTURE:
+     * 1 transaksi bisa memiliki banyak owner finance case,
+     * dipisah per case_type.
+     */
+    public function ownerFinanceCases()
+    {
+        return $this->hasMany(OwnerFinanceCase::class, 'income_transaction_id')
+            ->orderBy('id');
+    }
+
+    /**
+     * LEGACY COMPAT:
+     * Pertahankan nama lama agar kode lama yang masih memanggil
+     * ownerFinanceCase tidak langsung rusak.
+     * Akan mengambil case pertama saja.
+     */
     public function ownerFinanceCase()
     {
-        return $this->hasOne(OwnerFinanceCase::class, 'income_transaction_id');
+        return $this->hasOne(OwnerFinanceCase::class, 'income_transaction_id')
+            ->oldestOfMany();
     }
 }

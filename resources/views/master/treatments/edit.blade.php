@@ -152,6 +152,46 @@
                         </div>
                     </div>
 
+                    <div class="col-md-6">
+                        <input type="hidden" name="is_ortho_related" value="0">
+
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   name="is_ortho_related"
+                                   id="is_ortho_related"
+                                   value="1"
+                                   {{ old('is_ortho_related', $treatment->is_ortho_related ?? false) ? 'checked' : '' }}>
+                            <label class="form-check-label" for="is_ortho_related">
+                                Terkait Ortho
+                            </label>
+                        </div>
+
+                        <div class="form-text">
+                            Centang jika treatment ini termasuk kelompok tindakan ortho, agar nanti sistem bisa memunculkan pilihan mode ortho saat dipakai di transaksi.
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <input type="hidden" name="is_prosto_related" value="0">
+
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   name="is_prosto_related"
+                                   id="is_prosto_related"
+                                   value="1"
+                                   {{ old('is_prosto_related', $treatment->is_prosto_related ?? false) ? 'checked' : '' }}>
+                            <label class="form-check-label" for="is_prosto_related">
+                                Terkait Prosto
+                            </label>
+                        </div>
+
+                        <div class="form-text">
+                            Centang jika treatment ini termasuk kelompok tindakan prosto, agar nanti sistem bisa memunculkan pilihan mode prosto saat dipakai di transaksi.
+                        </div>
+                    </div>
+
                 </div>
 
                 <div class="alert alert-info mt-3 mb-3" id="manual_price_alert" style="display: none;">

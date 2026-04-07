@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\IncomeTransaction;
 use App\Models\OwnerFinanceCase;
 use App\Models\OwnerFinanceInstallment;
+use App\Services\OwnerFinanceCaseService;
 use App\Services\OwnerFinanceLedgerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -78,23 +79,14 @@ class OwnerFinanceController extends Controller
             return;
         }
 
-        $payTotal = (float) ($case->incomeTransaction?->pay_total ?? 0);
+        /**
+         * PENTING:
+         * Controller hanya menormalkan input owner.
+         * Perhitungan clinic_income_amount dan revenue_recognized_at
+         * wajib dipusatkan di OwnerFinanceCaseService agar konsisten.
+         */
         $labBill = max(0, (float) ($case->lab_bill_amount ?? 0));
-
-        if ($labBill > $payTotal && $payTotal > 0) {
-            $labBill = $payTotal;
-        }
-
         $case->lab_bill_amount = round($labBill, 2);
-        $case->clinic_income_amount = max(0, round($payTotal - $labBill, 2));
-
-        if ((bool) $case->lab_paid && (bool) $case->installed) {
-            if (!$case->revenue_recognized_at) {
-                $case->revenue_recognized_at = now();
-            }
-        } else {
-            $case->revenue_recognized_at = null;
-        }
     }
 
     private function syncOwnerWorkflowState(OwnerFinanceCase $case, ?string $preferredNote = null): void
@@ -243,6 +235,35 @@ class OwnerFinanceController extends Controller
         );
     }
 
+    private function syncFromTransaction(OwnerFinanceCase $case): OwnerFinanceCase
+    {
+        $case->loadMissing('incomeTransaction');
+
+        if ($case->incomeTransaction) {
+            app(OwnerFinanceCaseService::class)->syncForTransaction($case->incomeTransaction);
+        }
+
+        return $case->fresh([
+            'incomeTransaction',
+            'installments',
+            'monthlyLedgers',
+        ]);
+    }
+
+    private function normalizeDateFields(OwnerFinanceCase $case, array $data): void
+    {
+        $case->lab_paid_at = !empty($data['lab_paid_at']) ? $data['lab_paid_at'] : null;
+        $case->installed_at = !empty($data['installed_at']) ? $data['installed_at'] : null;
+
+        if (!(bool) ($case->lab_paid ?? false)) {
+            $case->lab_paid_at = null;
+        }
+
+        if (!(bool) ($case->installed ?? false)) {
+            $case->installed_at = null;
+        }
+    }
+
     private function normalizeProsthoFields(OwnerFinanceCase $case, array $data): void
     {
         $caseType = strtolower((string) ($case->case_type ?? ''));
@@ -268,11 +289,13 @@ class OwnerFinanceController extends Controller
         $tab = $request->query('tab', 'needs_setup');
         $caseType = $request->query('case_type', '');
         $q = trim((string) $request->query('q', ''));
+        $dateFrom = trim((string) $request->query('date_from', ''));
+        $dateTo = trim((string) $request->query('date_to', ''));
 
         $query = OwnerFinanceCase::with([
             'incomeTransaction.patient',
             'incomeTransaction.doctor',
-        ])->orderByDesc('id');
+        ]);
 
         if (in_array($caseType, ['prostodonti', 'ortho', 'retainer', 'lab'], true)) {
             $query->where('case_type', $caseType);
@@ -292,6 +315,18 @@ class OwnerFinanceController extends Controller
             });
         }
 
+        if ($dateFrom !== '' || $dateTo !== '') {
+            $query->whereHas('incomeTransaction', function ($trxQuery) use ($dateFrom, $dateTo) {
+                if ($dateFrom !== '') {
+                    $trxQuery->whereDate('trx_date', '>=', $dateFrom);
+                }
+
+                if ($dateTo !== '') {
+                    $trxQuery->whereDate('trx_date', '<=', $dateTo);
+                }
+            });
+        }
+
         if ($tab === 'monitoring') {
             $query->where(function ($qBuilder) {
                 $qBuilder->where('needs_setup', false)
@@ -305,6 +340,55 @@ class OwnerFinanceController extends Controller
             });
         }
 
+        $summaryRows = (clone $query)->get();
+
+        $summary = [
+            'total_cases' => $summaryRows->count(),
+            'needs_attention' => $summaryRows->filter(function ($case) {
+                return strtolower((string) ($case->owner_followup_status ?? '')) === 'needs_setup'
+                    || (bool) ($case->needs_setup ?? false);
+            })->count(),
+            'in_progress' => $summaryRows->filter(function ($case) {
+                return in_array(strtolower((string) ($case->owner_followup_status ?? '')), ['followed_up', 'in_progress'], true);
+            })->count(),
+            'done' => $summaryRows->filter(function ($case) {
+                return strtolower((string) ($case->owner_followup_status ?? '')) === 'done';
+            })->count(),
+            'held_cases' => $summaryRows->filter(function ($case) {
+                return !((bool) ($case->lab_paid ?? false) && (bool) ($case->installed ?? false));
+            })->count(),
+            'potential_clinic_income' => round((float) $summaryRows->sum(function ($case) {
+                return (float) ($case->clinic_income_amount ?? 0);
+            }), 2),
+            'ortho_running_balance' => round((float) $summaryRows->sum(function ($case) {
+                return strtolower((string) ($case->case_type ?? '')) === 'ortho'
+                    ? (float) ($case->ortho_remaining_balance ?? 0)
+                    : 0;
+            }), 2),
+        ];
+
+        $query
+            ->orderByRaw("
+                CASE
+                    WHEN COALESCE(owner_followup_status, '') = 'needs_setup' OR needs_setup = 1 THEN 1
+                    WHEN lab_paid = 0 OR installed = 0 THEN 2
+                    WHEN COALESCE(owner_followup_status, '') IN ('followed_up', 'in_progress') THEN 3
+                    WHEN COALESCE(owner_followup_status, '') = 'done' THEN 4
+                    ELSE 5
+                END ASC
+            ")
+            ->orderByRaw("
+                COALESCE(
+                    (SELECT trx_date
+                     FROM income_transactions
+                     WHERE income_transactions.id = owner_finance_cases.income_transaction_id
+                     LIMIT 1),
+                    DATE(owner_finance_cases.created_at)
+                ) ASC
+            ")
+            ->orderByRaw("COALESCE(owner_last_action_at, owner_finance_cases.updated_at) ASC")
+            ->orderByDesc('owner_finance_cases.id');
+
         $cases = $query->paginate(20)->withQueryString();
 
         return view('owner_finance.index', [
@@ -312,6 +396,9 @@ class OwnerFinanceController extends Controller
             'tab' => $tab,
             'caseType' => $caseType,
             'q' => $q,
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'summary' => $summary,
         ]);
     }
 
@@ -343,6 +430,8 @@ class OwnerFinanceController extends Controller
                 'case_type' => 'prostodonti',
                 'lab_paid' => false,
                 'installed' => false,
+                'lab_paid_at' => null,
+                'installed_at' => null,
                 'prostho_case_type' => null,
                 'prostho_case_detail' => null,
                 'lab_bill_amount' => 0,
@@ -376,6 +465,8 @@ class OwnerFinanceController extends Controller
             'case_type' => ['required', Rule::in(['prostodonti', 'ortho', 'retainer', 'lab'])],
             'lab_paid' => ['nullable', 'boolean'],
             'installed' => ['nullable', 'boolean'],
+            'lab_paid_at' => ['nullable', 'date'],
+            'installed_at' => ['nullable', 'date'],
             'prostho_case_type' => ['nullable', 'string', 'max:50'],
             'prostho_case_detail' => ['nullable', 'string'],
             'lab_bill_amount' => ['nullable', 'string'],
@@ -402,6 +493,7 @@ class OwnerFinanceController extends Controller
             $case->created_by = Auth::id();
             $case->updated_by = Auth::id();
 
+            $this->normalizeDateFields($case, $data);
             $this->normalizeProsthoFields($case, $data);
 
             $manualPaidAmount = $this->cleanToNumber($data['ortho_paid_amount'] ?? '0');
@@ -411,6 +503,7 @@ class OwnerFinanceController extends Controller
 
             $case->save();
 
+            $case = $this->syncFromTransaction($case);
             $this->rebuildMonthlyLedger($case);
 
             return redirect()
@@ -447,6 +540,8 @@ class OwnerFinanceController extends Controller
             'case_type' => ['required', Rule::in(['prostodonti', 'ortho', 'retainer', 'lab'])],
             'lab_paid' => ['nullable', 'boolean'],
             'installed' => ['nullable', 'boolean'],
+            'lab_paid_at' => ['nullable', 'date'],
+            'installed_at' => ['nullable', 'date'],
             'prostho_case_type' => ['nullable', 'string', 'max:50'],
             'prostho_case_detail' => ['nullable', 'string'],
             'lab_bill_amount' => ['nullable', 'string'],
@@ -476,6 +571,7 @@ class OwnerFinanceController extends Controller
             $ownerFinanceCase->is_active = (bool) ($data['is_active'] ?? true);
             $ownerFinanceCase->updated_by = Auth::id();
 
+            $this->normalizeDateFields($ownerFinanceCase, $data);
             $this->normalizeProsthoFields($ownerFinanceCase, $data);
 
             $ownerFinanceCase->save();
@@ -569,6 +665,7 @@ class OwnerFinanceController extends Controller
             $ownerFinanceCase->updated_by = Auth::id();
             $ownerFinanceCase->save();
 
+            $ownerFinanceCase = $this->syncFromTransaction($ownerFinanceCase);
             $this->rebuildMonthlyLedger($ownerFinanceCase);
 
             return redirect()
@@ -650,6 +747,7 @@ class OwnerFinanceController extends Controller
             $ownerFinanceCase->updated_by = Auth::id();
             $ownerFinanceCase->save();
 
+            $ownerFinanceCase = $this->syncFromTransaction($ownerFinanceCase);
             $this->rebuildMonthlyLedger($ownerFinanceCase);
 
             return redirect()
@@ -672,6 +770,7 @@ class OwnerFinanceController extends Controller
             $ownerFinanceCase->updated_by = Auth::id();
             $ownerFinanceCase->save();
 
+            $ownerFinanceCase = $this->syncFromTransaction($ownerFinanceCase);
             $this->rebuildMonthlyLedger($ownerFinanceCase);
 
             return redirect()

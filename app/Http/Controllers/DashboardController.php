@@ -233,7 +233,74 @@ class DashboardController extends Controller
                 ->limit(5)
                 ->get();
         }
+// =========================
+// OWNER CONTROL TOWER SUMMARY (TAMBAHAN AMAN)
+// =========================
 
+$ownerTotalHoldingFunds = 0;
+$ownerTotalRunningFunds = 0;
+$ownerTotalRecognizedIncome = 0;
+$ownerTotalPotentialIncome = 0;
+$ownerPriorityCases = collect();
+
+if ($isOwner && DB::getSchemaBuilder()->hasTable('owner_finance_cases')) {
+
+    // Dana tertahan (belum siap / belum follow up)
+    $ownerTotalHoldingFunds = (float) DB::table('owner_finance_cases')
+        ->where(function ($q) {
+            $q->where('needs_setup', 1)
+              ->orWhereNull('owner_followup_status')
+              ->orWhere('owner_followup_status', 'needs_setup');
+        })
+        ->sum('clinic_income_amount');
+
+    // Dana berjalan
+    $ownerTotalRunningFunds = (float) DB::table('owner_finance_cases')
+        ->whereIn('owner_followup_status', ['followed_up', 'in_progress'])
+        ->sum('clinic_income_amount');
+
+    // Sudah jadi income
+    $ownerTotalRecognizedIncome = (float) DB::table('owner_finance_cases')
+        ->whereNotNull('revenue_recognized_at')
+        ->sum('clinic_income_amount');
+
+    // Potensi income
+    $ownerTotalPotentialIncome = (float) DB::table('owner_finance_cases')
+        ->whereNull('revenue_recognized_at')
+        ->sum('clinic_income_amount');
+
+    // =========================
+    // PRIORITY CASES (TOP 5)
+    // =========================
+
+    $ownerPriorityCases = DB::table('owner_finance_cases as ofc')
+        ->leftJoin('income_transactions as it', 'it.id', '=', 'ofc.income_transaction_id')
+        ->leftJoin('patients as p', 'p.id', '=', 'it.patient_id')
+        ->leftJoin('doctors as d', 'd.id', '=', 'it.doctor_id')
+        ->select([
+            'ofc.id',
+            'ofc.case_type',
+            'ofc.owner_followup_status',
+            'ofc.needs_setup',
+            'ofc.lab_paid',
+            'ofc.installed',
+            'it.trx_date',
+            'it.invoice_number',
+            'p.name as patient_name',
+            'd.name as doctor_name',
+        ])
+        ->orderByRaw("
+            CASE
+                WHEN ofc.needs_setup = 1 THEN 1
+                WHEN ofc.lab_paid = 0 OR ofc.installed = 0 THEN 2
+                WHEN ofc.owner_followup_status IN ('followed_up','in_progress') THEN 3
+                ELSE 4
+            END ASC
+        ")
+        ->orderBy('it.trx_date', 'asc')
+        ->limit(5)
+        ->get();
+}
         /*
         |--------------------------------------------------------------------------
         | KPI OWNER / EXECUTIVE PERIODE AKTIF

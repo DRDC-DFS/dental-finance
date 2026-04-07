@@ -168,7 +168,7 @@
                         type="text"
                         id="treatmentSearchInput"
                         class="form-control"
-                        placeholder="Cari nama treatment, kategori, unit, nama dokter, manual, zero, gratis, atau belum diatur...">
+                        placeholder="Cari nama treatment, kategori, unit, nama dokter, manual, zero, gratis, ortho, prosto, atau belum diatur...">
                     <div class="form-text">
                         Gunakan untuk cepat menemukan treatment yang ingin diedit atau dicek fee dokternya.
                     </div>
@@ -209,6 +209,9 @@
                         @php
                             $feeRows = $feesByTreatmentDoctor[$treatment->id] ?? [];
                             $allowZero = (bool) ($treatment->allow_zero_price ?? false);
+                            $isFree = (bool) ($treatment->is_free ?? false);
+                            $isOrthoRelated = (bool) ($treatment->is_ortho_related ?? false);
+                            $isProstoRelated = (bool) ($treatment->is_prosto_related ?? false);
 
                             $searchParts = [
                                 strtolower((string) $treatment->name),
@@ -216,6 +219,9 @@
                                 strtolower((string) ($treatment->unit ?? '')),
                                 strtolower((string) ($treatment->price_mode ?? 'fixed')),
                                 $allowZero ? 'allow zero zero gratis harga 0 boleh 0' : 'tanpa zero',
+                                $isFree ? 'gratis free lanjutan tanpa bayar' : 'berbayar',
+                                $isOrthoRelated ? 'ortho terkait ortho' : 'bukan ortho',
+                                $isProstoRelated ? 'prosto terkait prosto' : 'bukan prosto',
                                 $treatment->is_active ? 'aktif' : 'nonaktif',
                             ];
 
@@ -247,6 +253,24 @@
                                     @if($allowZero)
                                         <span class="badge bg-warning text-dark border">
                                             BOLEH HARGA 0
+                                        </span>
+                                    @endif
+
+                                    @if($isFree)
+                                        <span class="badge bg-success">
+                                            GRATIS / LANJUTAN
+                                        </span>
+                                    @endif
+
+                                    @if($isOrthoRelated)
+                                        <span class="badge bg-info text-dark border">
+                                            TERKAIT ORTHO
+                                        </span>
+                                    @endif
+
+                                    @if($isProstoRelated)
+                                        <span class="badge bg-primary">
+                                            TERKAIT PROSTO
                                         </span>
                                     @endif
                                 </div>

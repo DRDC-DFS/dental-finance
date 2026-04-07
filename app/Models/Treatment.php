@@ -18,6 +18,8 @@ class Treatment extends Model
         'price_mode',
         'allow_zero_price',
         'is_free',
+        'is_ortho_related',
+        'is_prosto_related',
         'unit',
         'notes_hint',
         'is_active',
@@ -27,6 +29,8 @@ class Treatment extends Model
         'price' => 'decimal:2',
         'allow_zero_price' => 'boolean',
         'is_free' => 'boolean',
+        'is_ortho_related' => 'boolean',
+        'is_prosto_related' => 'boolean',
         'is_active' => 'boolean',
     ];
 
@@ -53,5 +57,15 @@ class Treatment extends Model
     public function getIsFreeTreatmentAttribute(): bool
     {
         return (bool) ($this->is_free ?? false);
+    }
+
+    public function getIsOrthoRelatedAttribute(): bool
+    {
+        return (bool) ($this->attributes['is_ortho_related'] ?? false);
+    }
+
+    public function getIsProstoRelatedAttribute(): bool
+    {
+        return (bool) ($this->attributes['is_prosto_related'] ?? false);
     }
 }

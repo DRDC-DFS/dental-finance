@@ -65,6 +65,13 @@ class IncomeTransactionController extends Controller
         return in_array($value, ['none', 'biasa', 'lanjutan'], true) ? $value : 'none';
     }
 
+    private function normalizeProstoCaseMode(?string $value): string
+    {
+        $value = strtolower(trim((string) $value));
+
+        return in_array($value, ['none', 'biasa', 'lanjutan'], true) ? $value : 'none';
+    }
+
     private function syncOwnerFinanceCase(IncomeTransaction $incomeTransaction): void
     {
         app(OwnerFinanceCaseService::class)->syncForTransaction($incomeTransaction);
@@ -372,6 +379,7 @@ class IncomeTransactionController extends Controller
             'patient_phone'    => ['nullable', 'string', 'max:50'],
             'payer_type'       => ['required', 'in:umum,bpjs,khusus'],
             'ortho_case_mode'  => ['nullable', 'in:none,biasa,lanjutan'],
+            'prosto_case_mode' => ['nullable', 'in:none,biasa,lanjutan'],
             'trx_date'         => ['nullable', 'date'],
             'notes'            => ['nullable', 'string'],
             'visibility'       => ['nullable', 'in:public,private'],
@@ -398,6 +406,7 @@ class IncomeTransactionController extends Controller
                 'patient_id'          => $patient->id,
                 'payer_type'          => $data['payer_type'],
                 'ortho_case_mode'     => $this->normalizeOrthoCaseMode($data['ortho_case_mode'] ?? 'none'),
+                'prosto_case_mode'    => $this->normalizeProstoCaseMode($data['prosto_case_mode'] ?? 'none'),
                 'status'              => 'draft',
                 'bill_total'          => 0,
                 'doctor_fee_total'    => 0,
@@ -425,7 +434,18 @@ class IncomeTransactionController extends Controller
 
         $treatments = Treatment::where('is_active', 1)
             ->orderBy('name')
-            ->get(['id', 'name', 'price', 'price_mode', 'allow_zero_price', 'is_free', 'unit', 'notes_hint']);
+            ->get([
+                'id',
+                'name',
+                'price',
+                'price_mode',
+                'allow_zero_price',
+                'is_free',
+                'is_ortho_related',
+                'is_prosto_related',
+                'unit',
+                'notes_hint',
+            ]);
 
         $doctors = Doctor::where('is_active', 1)->orderBy('name')->get();
 
@@ -471,6 +491,7 @@ class IncomeTransactionController extends Controller
             'patient_phone'    => ['nullable', 'string', 'max:50'],
             'payer_type'       => ['required', 'in:umum,bpjs,khusus'],
             'ortho_case_mode'  => ['nullable', 'in:none,biasa,lanjutan'],
+            'prosto_case_mode' => ['nullable', 'in:none,biasa,lanjutan'],
             'notes'            => ['nullable', 'string'],
             'visibility'       => ['required', 'in:public,private'],
         ]);
@@ -490,6 +511,7 @@ class IncomeTransactionController extends Controller
                 'patient_id'       => $patient->id,
                 'payer_type'       => $payerTypeAfter,
                 'ortho_case_mode'  => $this->normalizeOrthoCaseMode($data['ortho_case_mode'] ?? 'none'),
+                'prosto_case_mode' => $this->normalizeProstoCaseMode($data['prosto_case_mode'] ?? 'none'),
                 'notes'            => $data['notes'] ?? null,
                 'visibility'       => $data['visibility'],
             ]);

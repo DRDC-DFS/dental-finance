@@ -11,6 +11,14 @@ $logoUrl    = $setting?->logo_url ?: null;
  * Utamakan accessor dari model agar path lebih aman untuk local / production.
  */
 $loginBgUrl = $setting?->login_background_url ?: asset('assets/login-bg.jpg');
+
+/**
+ * Untuk local pakai HTTP biasa agar php artisan serve tidak error SSL.
+ * Untuk online / non-local tetap pakai HTTPS.
+ */
+$loginAction = app()->environment('local')
+    ? url('/login')
+    : secure_url('/login');
 @endphp
 
 <x-guest-layout>
@@ -310,7 +318,7 @@ $loginBgUrl = $setting?->login_background_url ?: asset('assets/login-bg.jpg');
                 </div>
             @endif
 
-            <form method="POST" action="{{ secure_url('/login') }}">
+            <form method="POST" action="{{ $loginAction }}">
                 @csrf
 
                 <div class="df-field">

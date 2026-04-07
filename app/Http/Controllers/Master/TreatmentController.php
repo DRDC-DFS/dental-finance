@@ -113,6 +113,8 @@ class TreatmentController extends Controller
         $priceMode = strtolower((string) ($validated['price_mode'] ?? 'fixed'));
         $allowZeroPrice = (bool) ($validated['allow_zero_price'] ?? false);
         $isFree = (bool) ($validated['is_free'] ?? false);
+        $isOrthoRelated = (bool) ($validated['is_ortho_related'] ?? false);
+        $isProstoRelated = (bool) ($validated['is_prosto_related'] ?? false);
         $price = $this->normalizeTreatmentPrice($request->price, $priceMode);
 
         if ($isFree) {
@@ -131,7 +133,7 @@ class TreatmentController extends Controller
 
         $treatment = null;
 
-        DB::transaction(function () use ($validated, $price, $priceMode, $allowZeroPrice, $isFree, $doctorFeePayload, &$treatment) {
+        DB::transaction(function () use ($validated, $price, $priceMode, $allowZeroPrice, $isFree, $isOrthoRelated, $isProstoRelated, $doctorFeePayload, &$treatment) {
             $treatment = Treatment::create([
                 'category_id' => $validated['category_id'],
                 'name' => $validated['name'],
@@ -140,6 +142,8 @@ class TreatmentController extends Controller
                 'price_mode' => $priceMode,
                 'allow_zero_price' => $allowZeroPrice,
                 'is_free' => $isFree,
+                'is_ortho_related' => $isOrthoRelated,
+                'is_prosto_related' => $isProstoRelated,
                 'notes_hint' => $this->normalizeNotesHint($validated['notes_hint'] ?? null),
                 'is_active' => $validated['is_active'],
             ]);
@@ -234,6 +238,8 @@ class TreatmentController extends Controller
         $priceMode = strtolower((string) ($validated['price_mode'] ?? 'fixed'));
         $allowZeroPrice = (bool) ($validated['allow_zero_price'] ?? false);
         $isFree = (bool) ($validated['is_free'] ?? false);
+        $isOrthoRelated = (bool) ($validated['is_ortho_related'] ?? false);
+        $isProstoRelated = (bool) ($validated['is_prosto_related'] ?? false);
         $price = $this->normalizeTreatmentPrice($request->price, $priceMode);
 
         if ($isFree) {
@@ -250,7 +256,7 @@ class TreatmentController extends Controller
 
         $doctorFeePayload = $this->extractDoctorFeePayload($request, $doctors);
 
-        DB::transaction(function () use ($validated, $price, $priceMode, $allowZeroPrice, $isFree, $treatment, $doctorFeePayload) {
+        DB::transaction(function () use ($validated, $price, $priceMode, $allowZeroPrice, $isFree, $isOrthoRelated, $isProstoRelated, $treatment, $doctorFeePayload) {
             $treatment->update([
                 'category_id' => $validated['category_id'],
                 'name' => $validated['name'],
@@ -259,6 +265,8 @@ class TreatmentController extends Controller
                 'price_mode' => $priceMode,
                 'allow_zero_price' => $allowZeroPrice,
                 'is_free' => $isFree,
+                'is_ortho_related' => $isOrthoRelated,
+                'is_prosto_related' => $isProstoRelated,
                 'notes_hint' => $this->normalizeNotesHint($validated['notes_hint'] ?? null),
                 'is_active' => $validated['is_active'],
             ]);
@@ -343,6 +351,8 @@ class TreatmentController extends Controller
             'price_mode' => 'required|in:fixed,manual',
             'allow_zero_price' => 'nullable|boolean',
             'is_free' => 'nullable|boolean',
+            'is_ortho_related' => 'nullable|boolean',
+            'is_prosto_related' => 'nullable|boolean',
             'notes_hint' => 'nullable|string|max:1000',
             'is_active' => 'required|boolean',
         ];
@@ -368,6 +378,8 @@ class TreatmentController extends Controller
             'price_mode.in' => 'Mode harga tidak valid.',
             'allow_zero_price.boolean' => 'Pengaturan harga 0 tidak valid.',
             'is_free.boolean' => 'Pengaturan treatment gratis tidak valid.',
+            'is_ortho_related.boolean' => 'Pengaturan related Ortho tidak valid.',
+            'is_prosto_related.boolean' => 'Pengaturan related Prosto tidak valid.',
             'notes_hint.max' => 'Catatan petunjuk maksimal 1000 karakter.',
             'is_active.required' => 'Status aktif wajib dipilih.',
             'is_active.boolean' => 'Status aktif tidak valid.',
