@@ -31,13 +31,20 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Copy app
 COPY . .
 
+# 🔥 FIX PENTING (HARUS SEBELUM COMPOSER)
+RUN mkdir -p bootstrap/cache \
+    && mkdir -p storage/framework/views \
+    && mkdir -p storage/framework/cache \
+    && mkdir -p storage/framework/sessions \
+    && chmod -R 777 bootstrap/cache storage
+
 # PHP deps
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
 # Frontend deps + Vite build
 RUN npm install && npm run build
 
-# Permissions
+# Permissions (tetap dipertahankan, tidak dihapus)
 RUN mkdir -p storage bootstrap/cache /tmp/views \
     && chmod -R 777 storage bootstrap/cache /tmp/views
 
