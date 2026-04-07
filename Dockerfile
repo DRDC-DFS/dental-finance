@@ -31,22 +31,23 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Copy app
 COPY . .
 
-# 🔥 FIX PENTING (HARUS SEBELUM COMPOSER)
-RUN mkdir -p bootstrap/cache \
-    && mkdir -p storage/framework/views \
-    && mkdir -p storage/framework/cache \
-    && mkdir -p storage/framework/sessions \
-    && chmod -R 777 bootstrap/cache storage
+# 🔥 HARD FIX (INI KUNCI UTAMA)
+RUN mkdir -p /var/www/bootstrap/cache \
+    && chmod -R 777 /var/www/bootstrap \
+    && chmod -R 777 /var/www/storage
+
+# 🔥 TAMBAHAN (antisipasi Laravel)
+RUN touch /var/www/bootstrap/cache/packages.php \
+    && touch /var/www/bootstrap/cache/services.php
 
 # PHP deps
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
-# Frontend deps + Vite build
+# Frontend deps
 RUN npm install && npm run build
 
-# Permissions (tetap dipertahankan, tidak dihapus)
-RUN mkdir -p storage bootstrap/cache /tmp/views \
-    && chmod -R 777 storage bootstrap/cache /tmp/views
+# Permissions
+RUN chmod -R 777 /var/www/storage /var/www/bootstrap/cache
 
 # Nginx config
 COPY docker/nginx.conf /etc/nginx/sites-available/default
