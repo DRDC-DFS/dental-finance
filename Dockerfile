@@ -31,23 +31,20 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Copy app
 COPY . .
 
-# 🔥 HARD FIX (INI KUNCI UTAMA)
+# Ensure Laravel writable dirs exist before any artisan/composer script usage
 RUN mkdir -p /var/www/bootstrap/cache \
-    && chmod -R 777 /var/www/bootstrap \
-    && chmod -R 777 /var/www/storage
-
-# 🔥 TAMBAHAN (antisipasi Laravel)
-RUN touch /var/www/bootstrap/cache/packages.php \
-    && touch /var/www/bootstrap/cache/services.php
+    /var/www/storage/framework/cache \
+    /var/www/storage/framework/sessions \
+    /var/www/storage/framework/views \
+    /tmp/views \
+    && chmod -R 777 /var/www/bootstrap /var/www/storage /tmp/views
 
 # PHP deps
-RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+# IMPORTANT: use --no-scripts so Laravel package discovery does not run during image build
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 
-# Frontend deps
+# Frontend deps + Vite build
 RUN npm install && npm run build
-
-# Permissions
-RUN chmod -R 777 /var/www/storage /var/www/bootstrap/cache
 
 # Nginx config
 COPY docker/nginx.conf /etc/nginx/sites-available/default
@@ -55,6 +52,7 @@ COPY docker/nginx.conf /etc/nginx/sites-available/default
 EXPOSE 8080
 
 CMD php artisan optimize:clear && \
+    php artisan package:discover --ansi && \
     php artisan config:clear && \
     php artisan cache:clear && \
     php artisan route:clear && \
