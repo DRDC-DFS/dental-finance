@@ -58,7 +58,7 @@
                             <option value="">- pilih dokter -</option>
                             @foreach($doctors as $d)
                                 <option value="{{ $d->id }}" @selected(old('doctor_id') == $d->id)>
-                                    {{ $d->name }} ({{ strtoupper($d->type) }})
+                                    {{ $d->name }}
                                 </option>
                             @endforeach
                         </select>
