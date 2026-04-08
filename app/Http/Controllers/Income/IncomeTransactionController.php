@@ -821,6 +821,11 @@ class IncomeTransactionController extends Controller
                         'zero_reason' => null,
                     ]);
 
+                $incomeTransaction->update([
+                    'pay_total' => 0,
+                    'status'    => 'paid',
+                ]);
+
                 $this->recalcTotalsAndSyncStatus($incomeTransaction);
                 $this->syncOwnerFinanceCase($incomeTransaction);
 
@@ -1327,10 +1332,15 @@ class IncomeTransactionController extends Controller
             $payTotal = 0;
         }
 
+        $currentStatus = strtolower(trim((string) ($incomeTransaction->status ?? 'draft')));
+        if ($currentStatus === '') {
+            $currentStatus = 'draft';
+        }
+
         $newStatus = 'draft';
 
         if ($isBpjs) {
-            $newStatus = $itemsCount > 0 ? 'paid' : 'draft';
+            $newStatus = ($itemsCount > 0 && $currentStatus === 'paid') ? 'paid' : 'draft';
         } elseif ($isKhusus) {
             $newStatus = $itemsCount > 0 && round($payTotal, 2) === round($billTotal, 2) ? 'paid' : 'draft';
         } elseif ($this->transactionAllowsZeroBillCompletion($incomeTransaction) && $itemsCount > 0 && round($billTotal, 2) === 0.0) {

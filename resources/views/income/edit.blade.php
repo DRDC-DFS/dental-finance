@@ -435,7 +435,7 @@
         <div class="card-b">
             @if($isBpjs)
                 <div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:12px;padding:12px 14px;margin-bottom:14px;">
-                    <b>Mode BPJS aktif.</b> Tindakan tetap bisa ditambahkan, tetapi harga, tagihan, fee dokter, dan diskon akan otomatis bernilai <b>Rp0</b>.
+                    <b>Mode BPJS aktif.</b> Tindakan tetap bisa ditambahkan, tetapi seluruh nilai transaksi otomatis <b>Rp0</b>.
                 </div>
             @endif
 
