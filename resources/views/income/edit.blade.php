@@ -368,7 +368,7 @@
                         @foreach($doctors as $doc)
                             <option value="{{ $doc->id }}"
                                 @selected(old('doctor_id', $incomeTransaction->doctor_id) == $doc->id)>
-                                {{ $doc->name }} ({{ strtoupper($doc->type) }})
+                                {{ $doc->name }}
                             </option>
                         @endforeach
                     </select>
