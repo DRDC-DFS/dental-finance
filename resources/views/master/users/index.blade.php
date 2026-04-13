@@ -23,10 +23,10 @@
     <div>
         <h4 class="mb-0">Master User</h4>
         <div class="text-muted small">
-            Owner dapat mengelola admin, branding sistem, dan menuju profil akun sendiri untuk upload foto akun.
+            Owner dapat mengelola admin, dokter mitra, branding sistem, dan menuju profil akun sendiri untuk upload foto akun.
         </div>
     </div>
-    <a href="{{ route('master.users.create') }}" class="btn btn-primary btn-sm">+ Tambah Admin</a>
+    <a href="{{ route('master.users.create') }}" class="btn btn-primary btn-sm">+ Tambah User</a>
 </div>
 
 @if(session('success'))
@@ -47,7 +47,13 @@
     <div class="card-body">
         <form class="row g-2" method="GET" action="{{ route('master.users.index') }}">
             <div class="col-md-10">
-                <input type="text" name="q" value="{{ $q ?? '' }}" class="form-control" placeholder="Cari nama / email user...">
+                <input
+                    type="text"
+                    name="q"
+                    value="{{ $q ?? '' }}"
+                    class="form-control"
+                    placeholder="Cari nama / email user..."
+                >
             </div>
             <div class="col-md-2 d-grid">
                 <button class="btn btn-outline-secondary">Cari</button>
@@ -68,7 +74,8 @@
                             <th style="width:90px;">Foto</th>
                             <th>Nama</th>
                             <th>Email</th>
-                            <th style="width:120px;">Role</th>
+                            <th style="width:140px;">Role</th>
+                            <th style="width:180px;">Dokter Terkait</th>
                             <th style="width:140px;">Status</th>
                             <th style="width:460px;">Aksi</th>
                         </tr>
@@ -76,6 +83,7 @@
                     <tbody>
                         @foreach($users as $u)
                             @php
+                                $roleValue = strtolower((string) $u->role);
                                 $roleText = strtoupper((string) $u->role);
                             @endphp
                             <tr>
@@ -83,7 +91,8 @@
                                     <img
                                         src="{{ $u->photo_url }}"
                                         alt="Foto {{ $u->name }}"
-                                        style="width:54px;height:54px;border-radius:50%;object-fit:cover;border:2px solid #e5e7eb;box-shadow:0 3px 8px rgba(0,0,0,.12);">
+                                        style="width:54px;height:54px;border-radius:50%;object-fit:cover;border:2px solid #e5e7eb;box-shadow:0 3px 8px rgba(0,0,0,.12);"
+                                    >
                                 </td>
 
                                 <td>
@@ -96,12 +105,22 @@
                                 <td>{{ $u->email }}</td>
 
                                 <td>
-                                    @if($u->role === 'owner')
+                                    @if($roleValue === 'owner')
                                         <span class="badge bg-dark text-uppercase">{{ $roleText }}</span>
-                                    @elseif($u->role === 'admin')
+                                    @elseif($roleValue === 'admin')
                                         <span class="badge bg-primary text-uppercase">{{ $roleText }}</span>
+                                    @elseif($roleValue === 'dokter_mitra')
+                                        <span class="badge bg-info text-dark text-uppercase">DOKTER MITRA</span>
                                     @else
                                         <span class="badge bg-secondary text-uppercase">{{ $roleText }}</span>
+                                    @endif
+                                </td>
+
+                                <td>
+                                    @if($roleValue === 'dokter_mitra')
+                                        <div class="fw-semibold">{{ $u->doctor->name ?? '-' }}</div>
+                                    @else
+                                        <span class="text-muted small">-</span>
                                     @endif
                                 </td>
 
@@ -114,7 +133,7 @@
                                 </td>
 
                                 <td>
-                                    @if($u->role === 'owner')
+                                    @if($roleValue === 'owner')
                                         <div class="d-flex flex-wrap gap-2">
                                             @if(auth()->id() === $u->id)
                                                 <a href="{{ $profileUrl }}" class="btn btn-sm btn-outline-primary">
@@ -128,7 +147,7 @@
                                                 <span class="text-muted small">Owner dikelola lewat akun sendiri</span>
                                             @endif
                                         </div>
-                                    @elseif($u->role === 'admin')
+                                    @elseif(in_array($roleValue, ['admin', 'dokter_mitra'], true))
                                         <div class="d-flex flex-wrap gap-2">
                                             <a href="{{ route('master.users.edit', $u) }}" class="btn btn-sm btn-primary">
                                                 Edit
@@ -140,7 +159,7 @@
                                                 <button
                                                     type="submit"
                                                     class="btn btn-sm {{ (int) $u->is_active === 1 ? 'btn-danger' : 'btn-success' }}"
-                                                    onclick="return confirm('Yakin ubah status admin ini?')"
+                                                    onclick="return confirm('Yakin ubah status user ini?')"
                                                 >
                                                     {{ (int) $u->is_active === 1 ? 'Nonaktifkan' : 'Aktifkan' }}
                                                 </button>
@@ -152,7 +171,7 @@
                                                 <button
                                                     type="submit"
                                                     class="btn btn-sm btn-warning"
-                                                    onclick="return confirm('Yakin reset password admin ini menjadi 12345678?')"
+                                                    onclick="return confirm('Yakin reset password user ini menjadi 12345678?')"
                                                 >
                                                     Reset Password
                                                 </button>
@@ -232,7 +251,12 @@
 
                         @if($loginBgUrl)
                             <div class="border rounded bg-light p-2">
-                                <img src="{{ $loginBgUrl }}" alt="Background Login" class="img-fluid rounded" style="max-height:180px; width:100%; object-fit:cover;">
+                                <img
+                                    src="{{ $loginBgUrl }}"
+                                    alt="Background Login"
+                                    class="img-fluid rounded"
+                                    style="max-height:180px; width:100%; object-fit:cover;"
+                                >
                             </div>
                         @else
                             <div class="border rounded bg-light p-3 text-muted text-center">

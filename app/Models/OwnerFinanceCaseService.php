@@ -3,9 +3,9 @@
 namespace App\Models;
 
 /**
- * File placeholder kosong.
+ * Placeholder file.
  *
- * Sengaja tidak mendeklarasikan class apa pun
+ * File ini sengaja tidak mendeklarasikan class apa pun
  * agar tidak bentrok dengan service resmi:
  * App\Services\OwnerFinanceCaseService
  */

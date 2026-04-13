@@ -31,6 +31,9 @@ use App\Http\Controllers\ProfileController;
 // DASHBOARD
 use App\Http\Controllers\DashboardController;
 
+// DOKTER MITRA
+use App\Http\Controllers\DoctorMitra\DoctorNoteController;
+
 // REPORT
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OwnerFinanceController;
@@ -104,6 +107,20 @@ Route::middleware('auth')->group(function () {
 
     Route::get('income/{income}/invoice/pdf', [IncomeTransactionController::class, 'invoicePdf'])
         ->name('income.invoice.pdf');
+
+    /*
+    |--------------------------------------------------------------------------
+    | SURAT LAB
+    |--------------------------------------------------------------------------
+    */
+    Route::get('income/{income}/lab/form', [IncomeTransactionController::class, 'labForm'])
+        ->name('income.lab.form');
+
+    Route::post('income/{income}/lab/store', [IncomeTransactionController::class, 'labStore'])
+        ->name('income.lab.store');
+
+    Route::get('income/{income}/lab/print', [IncomeTransactionController::class, 'labPrint'])
+        ->name('income.lab.print');
 
     /*
     |--------------------------------------------------------------------------
@@ -374,6 +391,55 @@ Route::middleware('auth')->group(function () {
                 ->route('master.users.index')
                 ->with('success', 'Branding sistem berhasil diperbarui.');
         })->name('branding.update');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | DOKTER MITRA
+    |--------------------------------------------------------------------------
+    */
+    Route::prefix('doctor-mitra')->name('doctor_mitra.')->group(function () {
+        Route::get('transactions/{incomeTransaction}', [DoctorNoteController::class, 'showTransaction'])
+            ->name('transactions.show');
+
+        Route::post('transactions/{incomeTransaction}/notes', [DoctorNoteController::class, 'store'])
+            ->name('notes.store');
+
+        Route::get('notes/{doctorNote}/edit', [DoctorNoteController::class, 'edit'])
+            ->name('notes.edit');
+
+        Route::put('notes/{doctorNote}', [DoctorNoteController::class, 'update'])
+            ->name('notes.update');
+
+        Route::put('notes/{doctorNote}/done', [DoctorNoteController::class, 'markDone'])
+            ->name('notes.done');
+
+        Route::put('notes/{doctorNote}/archive', [DoctorNoteController::class, 'archive'])
+            ->name('notes.archive');
+
+        Route::delete('notes/{doctorNote}', [DoctorNoteController::class, 'destroy'])
+            ->name('notes.destroy');
+
+        Route::get('notifications/{notification}', [DoctorNoteController::class, 'openNotification'])
+            ->name('notifications.open');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | MITRA DASHBOARD DATA
+    |--------------------------------------------------------------------------
+    */
+    Route::prefix('mitra')->name('mitra.')->group(function () {
+
+        Route::get('/pasien', [DashboardController::class, 'mitraPasien'])
+            ->name('pasien');
+
+        Route::get('/transaksi', [DashboardController::class, 'mitraTransaksi'])
+            ->name('transaksi');
+
+        Route::get('/fee', [DashboardController::class, 'mitraFee'])
+            ->name('fee');
+
     });
 
     /*

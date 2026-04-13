@@ -28,6 +28,16 @@ class IncomeTransaction extends Model
         'created_by',
         'receipt_verify_code',
         'receipt_pdf_path',
+
+        // SAFE UPDATE: Surat LAB
+        'needs_lab_letter',
+        'lab_letter_number',
+        'lab_letter_date',
+        'lab_name',
+        'lab_treatment_name',
+        'lab_material_shade',
+        'lab_tooth_detail',
+        'lab_instruction',
     ];
 
     protected $casts = [
@@ -35,6 +45,10 @@ class IncomeTransaction extends Model
         'bill_total' => 'decimal:2',
         'doctor_fee_total' => 'decimal:2',
         'pay_total' => 'decimal:2',
+
+        // SAFE UPDATE: Surat LAB
+        'needs_lab_letter' => 'boolean',
+        'lab_letter_date' => 'date',
     ];
 
     public function doctor()
@@ -83,5 +97,36 @@ class IncomeTransaction extends Model
     {
         return $this->hasOne(OwnerFinanceCase::class, 'income_transaction_id')
             ->oldestOfMany();
+    }
+
+    /**
+     * SAFE UPDATE:
+     * Relasi catatan dokter mitra.
+     */
+    public function doctorNotes()
+    {
+        return $this->hasMany(DoctorNote::class, 'income_transaction_id')
+            ->latest('id');
+    }
+
+    /**
+     * Helper aman untuk filter dashboard dokter mitra.
+     */
+    public function isOwnedByDoctor(?int $doctorId): bool
+    {
+        if (!$doctorId) {
+            return false;
+        }
+
+        return (int) $this->doctor_id === (int) $doctorId;
+    }
+
+    public function hasLabLetterData(): bool
+    {
+        return !blank($this->lab_name)
+            || !blank($this->lab_treatment_name)
+            || !blank($this->lab_material_shade)
+            || !blank($this->lab_tooth_detail)
+            || !blank($this->lab_instruction);
     }
 }

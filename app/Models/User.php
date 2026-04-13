@@ -14,6 +14,14 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     /**
+     * Role sistem.
+     */
+    public const ROLE_OWNER = 'owner';
+    public const ROLE_ADMIN = 'admin';
+    public const ROLE_STAFF = 'staff';
+    public const ROLE_DOKTER_MITRA = 'dokter_mitra';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
@@ -24,6 +32,7 @@ class User extends Authenticatable
         'password',
         'photo_path',
         'role',
+        'doctor_id',
         'is_active',
     ];
 
@@ -58,7 +67,13 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'doctor_id' => 'integer',
         ];
+    }
+
+    public function doctor()
+    {
+        return $this->belongsTo(Doctor::class, 'doctor_id');
     }
 
     public function getPhotoUrlAttribute(): string
@@ -93,10 +108,31 @@ SVG;
     public function getRoleLabelAttribute(): string
     {
         return match (strtolower((string) ($this->role ?? ''))) {
-            'owner' => 'OWNER',
-            'admin' => 'ADMIN',
-            'staff' => 'STAFF',
+            self::ROLE_OWNER => 'OWNER',
+            self::ROLE_ADMIN => 'ADMIN',
+            self::ROLE_STAFF => 'STAFF',
+            self::ROLE_DOKTER_MITRA => 'DOKTER MITRA',
             default => strtoupper((string) ($this->role ?? 'USER')),
         };
+    }
+
+    public function isOwner(): bool
+    {
+        return strtolower((string) $this->role) === self::ROLE_OWNER;
+    }
+
+    public function isAdmin(): bool
+    {
+        return strtolower((string) $this->role) === self::ROLE_ADMIN;
+    }
+
+    public function isStaff(): bool
+    {
+        return strtolower((string) $this->role) === self::ROLE_STAFF;
+    }
+
+    public function isDokterMitra(): bool
+    {
+        return strtolower((string) $this->role) === self::ROLE_DOKTER_MITRA;
     }
 }

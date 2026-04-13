@@ -74,6 +74,36 @@
     $specialCasePaymentLabel = $isDentalLaboratoryCase ? 'Pembayaran Dental Laboratory' : 'Biaya Dental Laboratory (Vendor)';
     $specialCaseIncomeLabel = 'Pendapatan Klinik';
     $specialCaseDetailLabel = $isDentalLaboratoryCase ? 'Detail Dental Laboratory' : 'Detail Kasus untuk Dental Laboratory';
+
+    $autoSpecialCaseType = old('prostho_case_type', $ownerFinanceCase->prostho_case_type ?? '');
+
+    if ($autoSpecialCaseType === '' && $trx) {
+        foreach (($trx->items ?? collect()) as $trxItem) {
+            $treatmentName = trim((string) data_get($trxItem, 'treatment.name', ''));
+            $categoryName = strtolower(trim((string) data_get($trxItem, 'treatment.category.name', '')));
+            $haystack = strtolower($categoryName . ' ' . $treatmentName);
+
+            if (
+                $treatmentName !== '' &&
+                (
+                    str_contains($haystack, 'prostodonti') ||
+                    str_contains($haystack, 'prostho') ||
+                    str_contains($haystack, 'prostodonsi') ||
+                    str_contains($haystack, 'gigi tiruan') ||
+                    str_contains($haystack, 'lepasan') ||
+                    str_contains($haystack, 'bridge') ||
+                    str_contains($haystack, 'implant') ||
+                    str_contains($haystack, 'implan') ||
+                    str_contains($haystack, 'valplast') ||
+                    str_contains($haystack, 'crown') ||
+                    str_contains($haystack, 'veneer')
+                )
+            ) {
+                $autoSpecialCaseType = \Illuminate\Support\Str::limit($treatmentName, 50, '');
+                break;
+            }
+        }
+    }
 @endphp
 
 <div class="container py-4">
@@ -380,14 +410,15 @@
 
                     <div class="col-md-4 prostho-only">
                         <label class="form-label">Jenis Kasus Khusus</label>
-                        <select name="prostho_case_type" class="form-select">
-                            <option value="">- pilih jenis kasus -</option>
-                            <option value="lepasan" @selected(old('prostho_case_type', $ownerFinanceCase->prostho_case_type ?? '') === 'lepasan')>Gigi Tiruan Lepasan</option>
-                            <option value="bridge" @selected(old('prostho_case_type', $ownerFinanceCase->prostho_case_type ?? '') === 'bridge')>Bridge</option>
-                            <option value="implant" @selected(old('prostho_case_type', $ownerFinanceCase->prostho_case_type ?? '') === 'implant')>Implan</option>
-                            <option value="retainer" @selected(old('prostho_case_type', $ownerFinanceCase->prostho_case_type ?? '') === 'retainer')>Retainer</option>
-                            <option value="lab" @selected(old('prostho_case_type', $ownerFinanceCase->prostho_case_type ?? '') === 'lab')>Dental Laboratory</option>
-                        </select>
+                        <input type="text"
+                               name="prostho_case_type"
+                               class="form-control"
+                               value="{{ $autoSpecialCaseType }}"
+                               maxlength="50"
+                               placeholder="Otomatis mengikuti tindakan awal terkait prosto">
+                        <div class="form-text">
+                            Otomatis mengikuti nama tindakan awal dari transaksi. Tetap bisa disesuaikan singkat bila diperlukan.
+                        </div>
                     </div>
 
                     <div class="col-md-8 prostho-only">

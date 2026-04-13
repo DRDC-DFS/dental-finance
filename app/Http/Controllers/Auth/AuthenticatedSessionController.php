@@ -31,17 +31,24 @@ class AuthenticatedSessionController extends Controller
         $user = Auth::user();
         $role = strtolower((string) ($user->role ?? ''));
 
+        // ✅ OWNER & ADMIN → dashboard utama
         if (in_array($role, ['owner', 'admin'], true)) {
             return redirect()->intended(route('dashboard', absolute: false));
         }
 
+        // ✅ DOKTER MITRA → dashboard (akan diarahkan oleh DashboardController)
+        if ($role === 'dokter_mitra') {
+            return redirect()->intended(route('dashboard', absolute: false));
+        }
+
+        // ❌ selain itu ditolak
         Auth::logout();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
         return redirect()->route('login')->withErrors([
-            'username' => 'Hanya OWNER atau ADMIN yang boleh login.',
+            'username' => 'Role tidak diizinkan login.',
         ]);
     }
 

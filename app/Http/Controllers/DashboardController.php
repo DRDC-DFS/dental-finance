@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DoctorNoteNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -9,6 +10,12 @@ class DashboardController extends Controller
 {
     public function index(Request $request)
     {
+        $user = $request->user();
+
+        if ($user && strtolower((string) ($user->role ?? '')) === 'dokter_mitra') {
+            return $this->doctorMitraDashboard($request);
+        }
+
         $setting = class_exists(\App\Models\Setting::class)
             ? \App\Models\Setting::query()->first()
             : null;
@@ -233,74 +240,76 @@ class DashboardController extends Controller
                 ->limit(5)
                 ->get();
         }
-// =========================
-// OWNER CONTROL TOWER SUMMARY (TAMBAHAN AMAN)
-// =========================
 
-$ownerTotalHoldingFunds = 0;
-$ownerTotalRunningFunds = 0;
-$ownerTotalRecognizedIncome = 0;
-$ownerTotalPotentialIncome = 0;
-$ownerPriorityCases = collect();
+        // =========================
+        // OWNER CONTROL TOWER SUMMARY (TAMBAHAN AMAN)
+        // =========================
 
-if ($isOwner && DB::getSchemaBuilder()->hasTable('owner_finance_cases')) {
+        $ownerTotalHoldingFunds = 0;
+        $ownerTotalRunningFunds = 0;
+        $ownerTotalRecognizedIncome = 0;
+        $ownerTotalPotentialIncome = 0;
+        $ownerPriorityCases = collect();
 
-    // Dana tertahan (belum siap / belum follow up)
-    $ownerTotalHoldingFunds = (float) DB::table('owner_finance_cases')
-        ->where(function ($q) {
-            $q->where('needs_setup', 1)
-              ->orWhereNull('owner_followup_status')
-              ->orWhere('owner_followup_status', 'needs_setup');
-        })
-        ->sum('clinic_income_amount');
+        if ($isOwner && DB::getSchemaBuilder()->hasTable('owner_finance_cases')) {
 
-    // Dana berjalan
-    $ownerTotalRunningFunds = (float) DB::table('owner_finance_cases')
-        ->whereIn('owner_followup_status', ['followed_up', 'in_progress'])
-        ->sum('clinic_income_amount');
+            // Dana tertahan (belum siap / belum follow up)
+            $ownerTotalHoldingFunds = (float) DB::table('owner_finance_cases')
+                ->where(function ($q) {
+                    $q->where('needs_setup', 1)
+                      ->orWhereNull('owner_followup_status')
+                      ->orWhere('owner_followup_status', 'needs_setup');
+                })
+                ->sum('clinic_income_amount');
 
-    // Sudah jadi income
-    $ownerTotalRecognizedIncome = (float) DB::table('owner_finance_cases')
-        ->whereNotNull('revenue_recognized_at')
-        ->sum('clinic_income_amount');
+            // Dana berjalan
+            $ownerTotalRunningFunds = (float) DB::table('owner_finance_cases')
+                ->whereIn('owner_followup_status', ['followed_up', 'in_progress'])
+                ->sum('clinic_income_amount');
 
-    // Potensi income
-    $ownerTotalPotentialIncome = (float) DB::table('owner_finance_cases')
-        ->whereNull('revenue_recognized_at')
-        ->sum('clinic_income_amount');
+            // Sudah jadi income
+            $ownerTotalRecognizedIncome = (float) DB::table('owner_finance_cases')
+                ->whereNotNull('revenue_recognized_at')
+                ->sum('clinic_income_amount');
 
-    // =========================
-    // PRIORITY CASES (TOP 5)
-    // =========================
+            // Potensi income
+            $ownerTotalPotentialIncome = (float) DB::table('owner_finance_cases')
+                ->whereNull('revenue_recognized_at')
+                ->sum('clinic_income_amount');
 
-    $ownerPriorityCases = DB::table('owner_finance_cases as ofc')
-        ->leftJoin('income_transactions as it', 'it.id', '=', 'ofc.income_transaction_id')
-        ->leftJoin('patients as p', 'p.id', '=', 'it.patient_id')
-        ->leftJoin('doctors as d', 'd.id', '=', 'it.doctor_id')
-        ->select([
-            'ofc.id',
-            'ofc.case_type',
-            'ofc.owner_followup_status',
-            'ofc.needs_setup',
-            'ofc.lab_paid',
-            'ofc.installed',
-            'it.trx_date',
-            'it.invoice_number',
-            'p.name as patient_name',
-            'd.name as doctor_name',
-        ])
-        ->orderByRaw("
-            CASE
-                WHEN ofc.needs_setup = 1 THEN 1
-                WHEN ofc.lab_paid = 0 OR ofc.installed = 0 THEN 2
-                WHEN ofc.owner_followup_status IN ('followed_up','in_progress') THEN 3
-                ELSE 4
-            END ASC
-        ")
-        ->orderBy('it.trx_date', 'asc')
-        ->limit(5)
-        ->get();
-}
+            // =========================
+            // PRIORITY CASES (TOP 5)
+            // =========================
+
+            $ownerPriorityCases = DB::table('owner_finance_cases as ofc')
+                ->leftJoin('income_transactions as it', 'it.id', '=', 'ofc.income_transaction_id')
+                ->leftJoin('patients as p', 'p.id', '=', 'it.patient_id')
+                ->leftJoin('doctors as d', 'd.id', '=', 'it.doctor_id')
+                ->select([
+                    'ofc.id',
+                    'ofc.case_type',
+                    'ofc.owner_followup_status',
+                    'ofc.needs_setup',
+                    'ofc.lab_paid',
+                    'ofc.installed',
+                    'it.trx_date',
+                    'it.invoice_number',
+                    'p.name as patient_name',
+                    'd.name as doctor_name',
+                ])
+                ->orderByRaw("
+                    CASE
+                        WHEN ofc.needs_setup = 1 THEN 1
+                        WHEN ofc.lab_paid = 0 OR ofc.installed = 0 THEN 2
+                        WHEN ofc.owner_followup_status IN ('followed_up','in_progress') THEN 3
+                        ELSE 4
+                    END ASC
+                ")
+                ->orderBy('it.trx_date', 'asc')
+                ->limit(5)
+                ->get();
+        }
+
         /*
         |--------------------------------------------------------------------------
         | KPI OWNER / EXECUTIVE PERIODE AKTIF
@@ -608,6 +617,71 @@ if ($isOwner && DB::getSchemaBuilder()->hasTable('owner_finance_cases')) {
 
         $stockAlertCount = $stockAlertItems->count();
 
+        /*
+        |--------------------------------------------------------------------------
+        | NOTIF DOKTER MITRA
+        |--------------------------------------------------------------------------
+        */
+        $doctorNoteNotificationsOwner = collect();
+        $doctorNoteNotificationsAdmin = collect();
+        $doctorNoteNotifications = collect();
+
+        if (DB::getSchemaBuilder()->hasTable('doctor_note_notifications')
+            && DB::getSchemaBuilder()->hasTable('doctor_notes')
+        ) {
+            if ($isOwner) {
+                $doctorNoteNotificationsOwner = DB::table('doctor_note_notifications as dnn')
+                    ->join('doctor_notes as dn', 'dn.id', '=', 'dnn.doctor_note_id')
+                    ->join('income_transactions as it', 'it.id', '=', 'dnn.income_transaction_id')
+                    ->leftJoin('patients as p', 'p.id', '=', 'it.patient_id')
+                    ->leftJoin('doctors as d', 'd.id', '=', 'dn.doctor_id')
+                    ->where('dnn.owner_user_id', $user->id)
+                    ->select([
+                        'dnn.id',
+                        'dnn.status',
+                        'dnn.owner_user_id',
+                        'dnn.income_transaction_id',
+                        'dn.note',
+                        'dn.created_at as note_date',
+                        'it.invoice_number',
+                        'it.id as transaction_id',
+                        'p.name as patient_name',
+                        'd.name as doctor_name',
+                    ])
+                    ->orderByDesc('dnn.id')
+                    ->limit(10)
+                    ->get();
+
+                $doctorNoteNotifications = $doctorNoteNotificationsOwner;
+            }
+
+            if ($isAdmin) {
+                $doctorNoteNotificationsAdmin = DB::table('doctor_note_notifications as dnn')
+                    ->join('doctor_notes as dn', 'dn.id', '=', 'dnn.doctor_note_id')
+                    ->join('income_transactions as it', 'it.id', '=', 'dnn.income_transaction_id')
+                    ->leftJoin('patients as p', 'p.id', '=', 'it.patient_id')
+                    ->leftJoin('doctors as d', 'd.id', '=', 'dn.doctor_id')
+                    ->where('dnn.owner_user_id', $user->id)
+                    ->select([
+                        'dnn.id',
+                        'dnn.status',
+                        'dnn.owner_user_id',
+                        'dnn.income_transaction_id',
+                        'dn.note',
+                        'dn.created_at as note_date',
+                        'it.invoice_number',
+                        'it.id as transaction_id',
+                        'p.name as patient_name',
+                        'd.name as doctor_name',
+                    ])
+                    ->orderByDesc('dnn.id')
+                    ->limit(10)
+                    ->get();
+
+                $doctorNoteNotifications = $doctorNoteNotificationsAdmin;
+            }
+        }
+
         return view('dashboard', compact(
             'logoPath',
             'today',
@@ -642,6 +716,11 @@ if ($isOwner && DB::getSchemaBuilder()->hasTable('owner_finance_cases')) {
             'ownerDoneCount',
             'ownerOrthoRunningFunds',
             'ownerFinanceAlerts',
+            'ownerTotalHoldingFunds',
+            'ownerTotalRunningFunds',
+            'ownerTotalRecognizedIncome',
+            'ownerTotalPotentialIncome',
+            'ownerPriorityCases',
             'periodGrossIncome',
             'periodPaidIncome',
             'periodExpenseTotal',
@@ -670,7 +749,268 @@ if ($isOwner && DB::getSchemaBuilder()->hasTable('owner_finance_cases')) {
             'adminActionHourlySeries',
             'recentTransactions',
             'stockAlertItems',
-            'stockAlertCount'
+            'stockAlertCount',
+            'doctorNoteNotificationsOwner',
+            'doctorNoteNotificationsAdmin',
+            'doctorNoteNotifications'
         ));
+    }
+
+
+    private function doctorMitraDashboard(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user || !$user->doctor_id) {
+            abort(403, 'Akun dokter mitra belum terhubung ke dokter.');
+        }
+
+        $doctorId = (int) $user->doctor_id;
+
+        $filterType = strtolower((string) $request->query('filter', 'daily'));
+        if (!in_array($filterType, ['daily', 'weekly', 'monthly'], true)) {
+            $filterType = 'daily';
+        }
+
+        $date = (string) $request->query('date', now()->toDateString());
+        $month = (int) $request->query('month', now()->month);
+        $year = (int) $request->query('year', now()->year);
+
+        try {
+            $dateObject = \Carbon\Carbon::parse($date);
+            $date = $dateObject->toDateString();
+        } catch (\Throwable $e) {
+            $date = now()->toDateString();
+            $dateObject = \Carbon\Carbon::parse($date);
+        }
+
+        if ($month < 1 || $month > 12) {
+            $month = (int) now()->month;
+        }
+
+        $baseTransactionQuery = DB::table('income_transactions')
+            ->where('doctor_id', $doctorId);
+
+        if ($filterType === 'daily') {
+            $baseTransactionQuery->whereDate('trx_date', $date);
+        } elseif ($filterType === 'weekly') {
+            $weekStart = now()->copy()->startOfWeek();
+            $weekEnd = now()->copy()->endOfWeek();
+
+            $baseTransactionQuery->whereBetween('trx_date', [
+                $weekStart->toDateString(),
+                $weekEnd->toDateString(),
+            ]);
+        } else {
+            $baseTransactionQuery
+                ->whereMonth('trx_date', $month)
+                ->whereYear('trx_date', $year);
+        }
+
+        $transactions = (clone $baseTransactionQuery)
+            ->orderByDesc('trx_date')
+            ->orderByDesc('id')
+            ->get();
+
+        $totalPatients = (int) (clone $baseTransactionQuery)
+            ->whereNotNull('patient_id')
+            ->distinct('patient_id')
+            ->count('patient_id');
+
+        $totalTransactions = (int) $transactions->count();
+
+        $totalActions = (int) DB::table('income_transaction_items as iti')
+            ->join('income_transactions as it', 'it.id', '=', 'iti.transaction_id')
+            ->where('it.doctor_id', $doctorId)
+            ->when($filterType === 'daily', fn ($q) => $q->whereDate('it.trx_date', $date))
+            ->when($filterType === 'weekly', fn ($q) => $q->whereBetween('it.trx_date', [
+                now()->copy()->startOfWeek()->toDateString(),
+                now()->copy()->endOfWeek()->toDateString(),
+            ]))
+            ->when($filterType === 'monthly', fn ($q) => $q->whereMonth('it.trx_date', $month)->whereYear('it.trx_date', $year))
+            ->count('iti.id');
+
+        $totalPayment = (float) $transactions->sum('pay_total');
+        $totalFee = (float) $transactions->sum('doctor_fee_total');
+
+        $recentTransactions = DB::table('income_transactions as it')
+            ->leftJoin('patients as p', 'p.id', '=', 'it.patient_id')
+            ->leftJoin('doctors as d', 'd.id', '=', 'it.doctor_id')
+            ->select([
+                'it.id',
+                'it.invoice_number',
+                'it.trx_date',
+                'it.status',
+                'it.bill_total',
+                'it.pay_total',
+                'it.doctor_fee_total',
+                'p.name as patient_name',
+                'd.name as doctor_name',
+            ])
+            ->where('it.doctor_id', $doctorId)
+            ->when($filterType === 'daily', fn ($q) => $q->whereDate('it.trx_date', $date))
+            ->when($filterType === 'weekly', fn ($q) => $q->whereBetween('it.trx_date', [
+                now()->copy()->startOfWeek()->toDateString(),
+                now()->copy()->endOfWeek()->toDateString(),
+            ]))
+            ->when($filterType === 'monthly', fn ($q) => $q->whereMonth('it.trx_date', $month)->whereYear('it.trx_date', $year))
+            ->orderByDesc('it.trx_date')
+            ->orderByDesc('it.id')
+            ->limit(20)
+            ->get();
+
+        return view('dashboard_dokter_mitra', compact(
+            'filterType',
+            'date',
+            'dateObject',
+            'month',
+            'year',
+            'totalPatients',
+            'totalTransactions',
+            'totalActions',
+            'totalPayment',
+            'totalFee',
+            'recentTransactions'
+        ));
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | MITRA - DATA PASIEN
+    |--------------------------------------------------------------------------
+    */
+    public function mitraPasien(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user || strtolower((string) ($user->role ?? '')) !== 'dokter_mitra' || !$user->doctor_id) {
+            abort(403, 'Akses hanya untuk dokter mitra.');
+        }
+
+        $doctorId = (int) $user->doctor_id;
+
+        $patients = DB::table('income_transactions as it')
+            ->join('patients as p', 'p.id', '=', 'it.patient_id')
+            ->selectRaw('
+                p.id,
+                p.name as patient_name,
+                COUNT(DISTINCT it.id) as total_transactions,
+                MIN(it.trx_date) as first_visit_date,
+                MAX(it.trx_date) as last_visit_date,
+                SUM(COALESCE(it.pay_total, 0)) as total_payment,
+                SUM(COALESCE(it.doctor_fee_total, 0)) as total_fee
+            ')
+            ->where('it.doctor_id', $doctorId)
+            ->groupBy('p.id', 'p.name')
+            ->orderByDesc('last_visit_date')
+            ->paginate(20)
+            ->withQueryString();
+
+        return view('mitra.pasien', compact('patients'));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | MITRA - TRANSAKSI DETAIL
+    |--------------------------------------------------------------------------
+    */
+    public function mitraTransaksi(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user || strtolower((string) ($user->role ?? '')) !== 'dokter_mitra' || !$user->doctor_id) {
+            abort(403, 'Akses hanya untuk dokter mitra.');
+        }
+
+        $doctorId = (int) $user->doctor_id;
+
+        $transactions = DB::table('income_transaction_items as iti')
+            ->join('income_transactions as it', 'it.id', '=', 'iti.transaction_id')
+            ->leftJoin('patients as p', 'p.id', '=', 'it.patient_id')
+            ->leftJoin('treatments as t', 't.id', '=', 'iti.treatment_id')
+            ->select([
+                'it.id as transaction_id',
+                'it.invoice_number',
+                'it.trx_date',
+                'it.status',
+                'p.name as patient_name',
+                't.name as treatment_name',
+                'iti.qty',
+                'iti.unit_price',
+                'iti.discount_amount',
+                'iti.subtotal',
+                'iti.fee_amount',
+            ])
+            ->where('it.doctor_id', $doctorId)
+            ->orderByDesc('it.trx_date')
+            ->orderByDesc('it.id')
+            ->paginate(25)
+            ->withQueryString();
+
+        return view('mitra.transaksi', compact('transactions'));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | MITRA - FEE
+    |--------------------------------------------------------------------------
+    */
+    public function mitraFee(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user || strtolower((string) ($user->role ?? '')) !== 'dokter_mitra' || !$user->doctor_id) {
+            abort(403, 'Akses hanya untuk dokter mitra.');
+        }
+
+        $doctorId = (int) $user->doctor_id;
+
+        $fees = DB::table('income_transactions as it')
+            ->leftJoin('patients as p', 'p.id', '=', 'it.patient_id')
+            ->leftJoin('income_transaction_items as iti', 'iti.transaction_id', '=', 'it.id')
+            ->selectRaw('
+                it.id,
+                it.trx_date,
+                it.invoice_number,
+                it.status,
+                p.name as patient_name,
+                COALESCE(it.pay_total, 0) as pay_total,
+                COALESCE(it.doctor_fee_total, 0) as doctor_fee_total,
+                COUNT(iti.id) as total_items,
+                SUM(COALESCE(iti.fee_amount, 0)) as total_item_fee
+            ')
+            ->where('it.doctor_id', $doctorId)
+            ->groupBy(
+                'it.id',
+                'it.trx_date',
+                'it.invoice_number',
+                'it.status',
+                'p.name',
+                'it.pay_total',
+                'it.doctor_fee_total'
+            )
+            ->orderByDesc('it.trx_date')
+            ->orderByDesc('it.id')
+            ->paginate(25)
+            ->withQueryString();
+
+        $feeSummary = [
+            'total_payment' => (float) DB::table('income_transactions')
+                ->where('doctor_id', $doctorId)
+                ->sum('pay_total'),
+            'total_fee' => (float) DB::table('income_transactions')
+                ->where('doctor_id', $doctorId)
+                ->sum('doctor_fee_total'),
+            'total_transactions' => (int) DB::table('income_transactions')
+                ->where('doctor_id', $doctorId)
+                ->count(),
+            'total_items' => (int) DB::table('income_transaction_items as iti')
+                ->join('income_transactions as it', 'it.id', '=', 'iti.transaction_id')
+                ->where('it.doctor_id', $doctorId)
+                ->count('iti.id'),
+        ];
+
+        return view('mitra.fee', compact('fees', 'feeSummary'));
     }
 }

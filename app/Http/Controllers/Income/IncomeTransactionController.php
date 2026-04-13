@@ -72,6 +72,152 @@ class IncomeTransactionController extends Controller
         return in_array($value, ['none', 'biasa', 'lanjutan'], true) ? $value : 'none';
     }
 
+
+    private function normalizeNeedsLabLetter($value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        $value = strtolower(trim((string) $value));
+
+        return in_array($value, ['1', 'true', 'ya', 'yes', 'on'], true);
+    }
+
+    private function normalizeLabKeyword(?string $value): string
+    {
+        $value = strtolower(trim((string) $value));
+        $value = str_replace(['(', ')', '-', '_', '/', '\\', ','], ' ', $value);
+        $value = preg_replace('/\s+/', ' ', $value ?? '');
+
+        return trim((string) $value);
+    }
+
+    private function treatmentLooksLikeProstoLab(?Treatment $treatment): bool
+    {
+        if (!$treatment) {
+            return false;
+        }
+
+        if ((bool) ($treatment->is_prosto_related ?? false)) {
+            return true;
+        }
+
+        $name = $this->normalizeLabKeyword($treatment->name ?? '');
+
+        $keywords = [
+            'gigi palsu',
+            'gtsl',
+            'gtjl',
+            'protesa',
+            'prostodonti',
+            'prosto',
+            'denture',
+            'akrilik',
+            'frame',
+            'impression',
+            'cetak',
+            'sendok cetak',
+            'wax bite',
+            'bite rim',
+            'try in',
+            'reparasi gigi palsu',
+            'perbaikan gigi palsu',
+            'pemasangan gigi palsu',
+        ];
+
+        foreach ($keywords as $keyword) {
+            if (str_contains($name, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function transactionNeedsLabDetection(IncomeTransaction $incomeTransaction): bool
+    {
+        $items = $incomeTransaction->relationLoaded('items')
+            ? $incomeTransaction->items
+            : $incomeTransaction->items()->with('treatment')->get();
+
+        foreach ($items as $item) {
+            if ($this->treatmentLooksLikeProstoLab($item->treatment ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function ensureLabEligibleTransaction(IncomeTransaction $incomeTransaction): void
+    {
+        $incomeTransaction->loadMissing(['items.treatment']);
+
+        if (!$this->transactionNeedsLabDetection($incomeTransaction)) {
+            abort(403, 'Surat LAB hanya tersedia untuk transaksi Prosto / gigi palsu yang relevan.');
+        }
+    }
+
+    private function nextLabLetterNumber(IncomeTransaction $incomeTransaction): string
+    {
+        $date = $incomeTransaction->trx_date ? $incomeTransaction->trx_date->format('Ymd') : now()->format('Ymd');
+
+        $todayCount = (int) DB::table('income_transactions')
+            ->whereDate('trx_date', $incomeTransaction->trx_date ? $incomeTransaction->trx_date->format('Y-m-d') : now()->toDateString())
+            ->whereNotNull('lab_letter_number')
+            ->count();
+
+        $sequence = str_pad((string) ($todayCount + 1), 3, '0', STR_PAD_LEFT);
+
+        return 'LAB-' . $date . '-' . $sequence;
+    }
+
+    private function inferLabActionType(IncomeTransaction $incomeTransaction): string
+    {
+        $incomeTransaction->loadMissing(['items.treatment']);
+
+        foreach ($incomeTransaction->items as $item) {
+            $treatment = $item->treatment;
+            if ($this->treatmentLooksLikeProstoLab($treatment)) {
+                return (string) ($treatment->name ?? '');
+            }
+        }
+
+        return '-';
+    }
+
+    private function buildLabPayload(IncomeTransaction $incomeTransaction): array
+    {
+        $incomeTransaction->loadMissing(['patient', 'doctor', 'items.treatment']);
+
+        $setting = Setting::query()->first();
+        $labLetterNumber = trim((string) ($incomeTransaction->lab_letter_number ?? ''));
+        if ($labLetterNumber === '') {
+            $labLetterNumber = $this->nextLabLetterNumber($incomeTransaction);
+        }
+
+        $labLetterDate = $incomeTransaction->lab_letter_date
+            ? \Illuminate\Support\Carbon::parse($incomeTransaction->lab_letter_date)
+            : ($incomeTransaction->trx_date ?: now());
+
+        $doctorName = trim((string) ($incomeTransaction->doctor?->name ?? ''));
+        if ($doctorName === '') {
+            $doctorName = trim((string) ($setting?->owner_doctor_name ?? 'drg. Desly A.C. Luhulima, M.K.M'));
+        }
+
+        return [
+            'incomeTransaction' => $incomeTransaction,
+            'setting' => $setting,
+            'labLetterNumber' => $labLetterNumber,
+            'labLetterDate' => $labLetterDate,
+            'labDoctorName' => $doctorName,
+            'labActionType' => trim((string) ($incomeTransaction->lab_action_type ?? '')) !== ''
+                ? (string) $incomeTransaction->lab_action_type
+                : $this->inferLabActionType($incomeTransaction),
+        ];
+    }
+
     private function syncOwnerFinanceCase(IncomeTransaction $incomeTransaction): void
     {
         app(OwnerFinanceCaseService::class)->syncForTransaction($incomeTransaction);
@@ -383,6 +529,7 @@ class IncomeTransactionController extends Controller
             'trx_date'         => ['nullable', 'date'],
             'notes'            => ['nullable', 'string'],
             'visibility'       => ['nullable', 'in:public,private'],
+            'needs_lab_letter' => ['nullable', 'in:0,1'],
         ]);
 
         return DB::transaction(function () use ($data) {
@@ -413,6 +560,7 @@ class IncomeTransactionController extends Controller
                 'pay_total'           => 0,
                 'visibility'          => $visibility,
                 'notes'               => $data['notes'] ?? null,
+                'needs_lab_letter'    => $this->normalizeNeedsLabLetter($data['needs_lab_letter'] ?? false),
                 'created_by'          => Auth::id(),
                 'receipt_verify_code' => null,
                 'receipt_pdf_path'    => null,
@@ -494,6 +642,7 @@ class IncomeTransactionController extends Controller
             'prosto_case_mode' => ['nullable', 'in:none,biasa,lanjutan'],
             'notes'            => ['nullable', 'string'],
             'visibility'       => ['required', 'in:public,private'],
+            'needs_lab_letter' => ['nullable', 'in:0,1'],
         ]);
 
         return DB::transaction(function () use ($incomeTransaction, $data) {
@@ -514,6 +663,7 @@ class IncomeTransactionController extends Controller
                 'prosto_case_mode' => $this->normalizeProstoCaseMode($data['prosto_case_mode'] ?? 'none'),
                 'notes'            => $data['notes'] ?? null,
                 'visibility'       => $data['visibility'],
+                'needs_lab_letter' => $this->normalizeNeedsLabLetter($data['needs_lab_letter'] ?? false),
             ]);
 
             if ($this->isBpjs($payerTypeAfter)) {
@@ -1082,6 +1232,76 @@ class IncomeTransactionController extends Controller
                 ->route('income.edit', ['income' => $incomeTransaction->id])
                 ->with('success', 'Pembayaran berhasil dihapus dan total/status sudah dihitung ulang.');
         });
+    }
+
+
+    public function labForm(IncomeTransaction $income)
+    {
+        $this->ensureOwnerOrAdmin();
+        $this->ensureLabEligibleTransaction($income);
+
+        $payload = $this->buildLabPayload($income);
+
+        return view('income.lab_form', $payload);
+    }
+
+    public function labStore(Request $request, IncomeTransaction $income)
+    {
+        $this->ensureOwnerOrAdmin();
+        $this->ensureLabEligibleTransaction($income);
+
+        $data = $request->validate([
+            'lab_name'           => ['required', 'string', 'max:150'],
+            'lab_letter_date'    => ['required', 'date'],
+            'lab_letter_number'  => ['nullable', 'string', 'max:100'],
+            'lab_action_type'    => ['required', 'string', 'max:200'],
+            'lab_material_shade' => ['nullable', 'string', 'max:200'],
+            'lab_teeth_detail'   => ['required', 'string'],
+            'lab_instruction'    => ['required', 'string'],
+        ]);
+
+        $number = trim((string) ($data['lab_letter_number'] ?? ''));
+        if ($number === '') {
+            $number = $this->nextLabLetterNumber($income);
+        }
+
+        DB::table('income_transactions')
+            ->where('id', (int) $income->id)
+            ->update([
+                'needs_lab_letter' => 1,
+                'lab_name' => trim((string) $data['lab_name']),
+                'lab_letter_date' => $data['lab_letter_date'],
+                'lab_letter_number' => $number,
+                'lab_action_type' => trim((string) $data['lab_action_type']),
+                'lab_material_shade' => trim((string) ($data['lab_material_shade'] ?? '')) ?: null,
+                'lab_teeth_detail' => trim((string) $data['lab_teeth_detail']),
+                'lab_instruction' => trim((string) $data['lab_instruction']),
+                'updated_at' => now(),
+            ]);
+
+        return redirect()
+            ->route('income.lab.form', ['income' => $income->id])
+            ->with('success', 'Data Surat LAB berhasil disimpan.');
+    }
+
+    public function labPrint(IncomeTransaction $income)
+    {
+        $this->ensureOwnerOrAdmin();
+        $this->ensureLabEligibleTransaction($income);
+
+        if (!(bool) ($income->needs_lab_letter ?? false)) {
+            return redirect()
+                ->route('income.lab.form', ['income' => $income->id])
+                ->withErrors(['lab_name' => 'Silakan isi dan simpan data Surat LAB terlebih dahulu.']);
+        }
+
+        $payload = $this->buildLabPayload($income->fresh());
+        $number = preg_replace('/[^A-Za-z0-9\-]/', '-', (string) ($payload['labLetterNumber'] ?? ('LAB-' . $income->id)));
+        $fileName = 'surat-lab-' . ($number ?: $income->id) . '.pdf';
+
+        return Pdf::loadView('income.lab_print', $payload)
+            ->setPaper('a4', 'portrait')
+            ->download($fileName);
     }
 
     public function invoice(IncomeTransaction $income)

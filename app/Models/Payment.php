@@ -2,34 +2,34 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Payment extends Model
 {
-    use HasFactory;
-
-    protected $table = 'payments';
-
     protected $fillable = [
         'transaction_id',
-        'payment_method_id',
         'amount',
-        'pay_date',
+        'method',
+        'notes',
     ];
 
-    protected $casts = [
-        'pay_date' => 'date',
-        'amount' => 'decimal:2',
-    ];
-
+    // Relasi ke transaksi
     public function transaction()
     {
         return $this->belongsTo(IncomeTransaction::class, 'transaction_id');
     }
 
-    public function method()
-    {
-        return $this->belongsTo(PaymentMethod::class, 'payment_method_id');
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | ⚠️ NONAKTIFKAN SEMENTARA
+    |--------------------------------------------------------------------------
+    | Model PaymentMethod TIDAK ADA di sistem saat ini
+    | Jika dibiarkan → error seperti yang Anda alami
+    |--------------------------------------------------------------------------
+    */
+
+    // public function paymentMethod()
+    // {
+    //     return $this->belongsTo(PaymentMethod::class);
+    // }
 }

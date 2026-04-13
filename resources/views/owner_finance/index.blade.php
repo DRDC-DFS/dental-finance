@@ -12,7 +12,7 @@
         }
 
         try {
-            return \Carbon\Carbon::parse($value)->format('Y-m-d');
+            return \Carbon\Carbon::parse($value)->format('d-m-Y');
         } catch (\Throwable $e) {
             return $fallback;
         }
@@ -28,6 +28,14 @@
         } catch (\Throwable $e) {
             return null;
         }
+    };
+
+    $isCaseDone = function ($case) {
+        return (bool) ($case->lab_paid ?? false) && (bool) ($case->installed ?? false);
+    };
+
+    $shouldShowCaseAge = function ($case) use ($isCaseDone) {
+        return !$isCaseDone($case);
     };
 
     $currentTab = $tab ?? 'needs_setup';
@@ -435,7 +443,7 @@
                                         @if($caseAgeDays !== null && $caseAgeDays > 14)
                                             <span class="small text-danger fw-semibold">Perlu perhatian</span>
                                         @elseif($caseAgeDays !== null && $caseAgeDays >= 7)
-                                            <span class="small text-warning fw-semibold">Perlu dipantau</span>
+                                            <span class="small text-warning fw-semibold">{{ $shouldShowCaseAge($case) ? 'Perlu dipantau' : '' }}</span>
                                         @endif
                                     </div>
                                 </td>

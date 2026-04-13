@@ -72,6 +72,108 @@
             </div>
         </div>
 
+
+        @php
+            $doctorNoteNotifications = collect($doctorNoteNotifications ?? []);
+            $ownerDoctorNoteNotifications = $doctorNoteNotifications
+                ->filter(function ($notif) {
+                    if (isset($notif->target_role)) {
+                        return (string) $notif->target_role === 'owner';
+                    }
+
+                    if (isset($notif->target_user_role)) {
+                        return (string) $notif->target_user_role === 'owner';
+                    }
+
+                    return true;
+                })
+                ->take(10)
+                ->values();
+        @endphp
+
+        <div class="card shadow-sm border-0 mb-4" style="border-left:6px solid #e83e8c !important;">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span>🔔 Notifikasi Catatan Dokter Mitra</span>
+                <span class="badge bg-danger">{{ number_format($ownerDoctorNoteNotifications->count(), 0, ',', '.') }}</span>
+            </div>
+            <div class="card-body">
+                @if($ownerDoctorNoteNotifications->count() > 0)
+                    <div class="mb-2 text-muted small">
+                        Notifikasi ini berasal dari catatan koreksi dokter mitra. Klik <b>Buka Transaksi</b> untuk menuju sumber data terkait.
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>Dokter Mitra</th>
+                                    <th>Pasien</th>
+                                    <th>Invoice</th>
+                                    <th>Ringkasan Catatan</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($ownerDoctorNoteNotifications as $notif)
+                                    @php
+                                        $notifCreatedAt = $notif->created_at ?? null;
+                                        $notifDoctorName = $notif->doctor_name
+                                            ?? $notif->doctor?->name
+                                            ?? $notif->doctorNote?->doctor?->name
+                                            ?? '-';
+                                        $notifPatientName = $notif->patient_name
+                                            ?? $notif->transaction?->patient?->name
+                                            ?? $notif->doctorNote?->transaction?->patient?->name
+                                            ?? '-';
+                                        $notifInvoice = $notif->invoice_number
+                                            ?? $notif->transaction?->invoice_number
+                                            ?? $notif->doctorNote?->transaction?->invoice_number
+                                            ?? '-';
+                                        $notifNote = trim((string) (
+                                            $notif->note
+                                            ?? $notif->doctor_note
+                                            ?? $notif->doctorNote?->note
+                                            ?? '-'
+                                        ));
+                                        $notifStatus = strtolower((string) ($notif->status ?? 'unread'));
+                                        $notifBadgeClass = $notifStatus === 'read'
+                                            ? 'bg-success'
+                                            : 'bg-danger';
+                                        $notifBadgeText = $notifStatus === 'read'
+                                            ? 'SUDAH DIBUKA'
+                                            : 'BELUM DIBUKA';
+                                    @endphp
+                                    <tr>
+                                        <td>{{ $notifCreatedAt ? \Carbon\Carbon::parse($notifCreatedAt)->format('d-m-Y H:i') : '-' }}</td>
+                                        <td class="fw-semibold">{{ $notifDoctorName }}</td>
+                                        <td>{{ $notifPatientName }}</td>
+                                        <td>{{ $notifInvoice }}</td>
+                                        <td style="min-width:260px;">
+                                            <div class="text-wrap">{{ \Illuminate\Support\Str::limit($notifNote, 140) }}</div>
+                                        </td>
+                                        <td>
+                                            <span class="badge {{ $notifBadgeClass }}">{{ $notifBadgeText }}</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <a href="{{ route('doctor_mitra.notifications.open', $notif->id) }}" class="btn btn-sm btn-outline-primary">
+                                                Buka Transaksi
+                                            </a>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="text-success fw-semibold">
+                        Belum ada notifikasi catatan dokter mitra untuk owner.
+                    </div>
+                @endif
+            </div>
+        </div>
+
         {{-- ALERT STOK OWNER --}}
         <div class="row g-3 mb-4">
             <div class="col-md-4">
@@ -734,6 +836,108 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+
+        @php
+            $doctorNoteNotifications = collect($doctorNoteNotifications ?? []);
+            $adminDoctorNoteNotifications = $doctorNoteNotifications
+                ->filter(function ($notif) {
+                    if (isset($notif->target_role)) {
+                        return (string) $notif->target_role === 'admin';
+                    }
+
+                    if (isset($notif->target_user_role)) {
+                        return (string) $notif->target_user_role === 'admin';
+                    }
+
+                    return true;
+                })
+                ->take(10)
+                ->values();
+        @endphp
+
+        <div class="card shadow-sm border-0 mb-4" style="border-left:6px solid #e83e8c !important;">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span>🔔 Notifikasi Catatan Dokter Mitra</span>
+                <span class="badge bg-danger">{{ number_format($adminDoctorNoteNotifications->count(), 0, ',', '.') }}</span>
+            </div>
+            <div class="card-body">
+                @if($adminDoctorNoteNotifications->count() > 0)
+                    <div class="mb-2 text-muted small">
+                        Catatan koreksi dari dokter mitra muncul di sini. Klik <b>Buka Transaksi</b> agar admin langsung menuju transaksi sumber data.
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>Dokter Mitra</th>
+                                    <th>Pasien</th>
+                                    <th>Invoice</th>
+                                    <th>Ringkasan Catatan</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($adminDoctorNoteNotifications as $notif)
+                                    @php
+                                        $notifCreatedAt = $notif->created_at ?? null;
+                                        $notifDoctorName = $notif->doctor_name
+                                            ?? $notif->doctor?->name
+                                            ?? $notif->doctorNote?->doctor?->name
+                                            ?? '-';
+                                        $notifPatientName = $notif->patient_name
+                                            ?? $notif->transaction?->patient?->name
+                                            ?? $notif->doctorNote?->transaction?->patient?->name
+                                            ?? '-';
+                                        $notifInvoice = $notif->invoice_number
+                                            ?? $notif->transaction?->invoice_number
+                                            ?? $notif->doctorNote?->transaction?->invoice_number
+                                            ?? '-';
+                                        $notifNote = trim((string) (
+                                            $notif->note
+                                            ?? $notif->doctor_note
+                                            ?? $notif->doctorNote?->note
+                                            ?? '-'
+                                        ));
+                                        $notifStatus = strtolower((string) ($notif->status ?? 'unread'));
+                                        $notifBadgeClass = $notifStatus === 'read'
+                                            ? 'bg-success'
+                                            : 'bg-danger';
+                                        $notifBadgeText = $notifStatus === 'read'
+                                            ? 'SUDAH DIBUKA'
+                                            : 'BELUM DIBUKA';
+                                    @endphp
+                                    <tr>
+                                        <td>{{ $notifCreatedAt ? \Carbon\Carbon::parse($notifCreatedAt)->format('d-m-Y H:i') : '-' }}</td>
+                                        <td class="fw-semibold">{{ $notifDoctorName }}</td>
+                                        <td>{{ $notifPatientName }}</td>
+                                        <td>{{ $notifInvoice }}</td>
+                                        <td style="min-width:260px;">
+                                            <div class="text-wrap">{{ \Illuminate\Support\Str::limit($notifNote, 140) }}</div>
+                                        </td>
+                                        <td>
+                                            <span class="badge {{ $notifBadgeClass }}">{{ $notifBadgeText }}</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <a href="{{ route('doctor_mitra.notifications.open', $notif->id) }}" class="btn btn-sm btn-outline-primary">
+                                                Buka Transaksi
+                                            </a>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="text-success fw-semibold">
+                        Belum ada notifikasi catatan dokter mitra untuk admin.
+                    </div>
+                @endif
             </div>
         </div>
 

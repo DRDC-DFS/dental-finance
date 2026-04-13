@@ -343,6 +343,12 @@ class OwnerFinanceCaseService
         }
 
         if (in_array((string) $case->case_type, ['prostodonti', 'retainer', 'lab'], true)) {
+            $autoProsthoCaseType = $this->resolvePrimarySpecialCaseTypeFromTransaction($case, $transaction);
+
+            if (!empty($autoProsthoCaseType)) {
+                $case->prostho_case_type = mb_substr($autoProsthoCaseType, 0, 50);
+            }
+
             /**
              * SINGLE SOURCE OF TRUTH:
              * clinic_income_amount dan lab_bill_amount harus disimpan final di DB
@@ -390,6 +396,28 @@ class OwnerFinanceCaseService
         }
 
         return round($sum, 2);
+    }
+
+
+    private function resolvePrimarySpecialCaseTypeFromTransaction(OwnerFinanceCase $case, ?IncomeTransaction $transaction): ?string
+    {
+        if (!$transaction) {
+            return !empty($case->prostho_case_type) ? trim((string) $case->prostho_case_type) : null;
+        }
+
+        $items = $transaction->items ?? collect();
+        $targetCaseType = (string) ($case->case_type ?? '');
+
+        foreach ($items as $item) {
+            $itemCaseType = $this->detectCaseTypeFromTransactionItem($item, $transaction);
+            $treatmentName = trim((string) data_get($item, 'treatment.name', ''));
+
+            if ($itemCaseType === $targetCaseType && $treatmentName !== '') {
+                return $treatmentName;
+            }
+        }
+
+        return !empty($case->prostho_case_type) ? trim((string) $case->prostho_case_type) : null;
     }
 
     private function normalizeLabBillAmount(OwnerFinanceCase $case, float $grossCaseAmount): float

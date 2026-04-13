@@ -149,6 +149,145 @@ body{
     opacity:.9;
 }
 
+/* ===== OWNER NOTIFICATION ===== */
+
+.dfs-notif-dropdown-wrap{
+    position:relative;
+}
+
+.dfs-notif-toggle{
+    position:relative;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:46px;
+    height:46px;
+    border:none;
+    border-radius:14px;
+    background:rgba(255,255,255,0.14);
+    border:1px solid rgba(255,255,255,0.18);
+    box-shadow:0 4px 12px rgba(0,0,0,.12);
+    color:#ffffff;
+    font-size:22px;
+    line-height:1;
+}
+
+.dfs-notif-toggle:hover,
+.dfs-notif-toggle:focus{
+    background:rgba(255,255,255,0.20);
+    color:#ffffff;
+}
+
+.dfs-notif-badge{
+    position:absolute;
+    top:-5px;
+    right:-5px;
+    min-width:21px;
+    height:21px;
+    padding:0 6px;
+    border-radius:999px;
+    background:#ef4444;
+    color:#ffffff;
+    font-size:11px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 4px 10px rgba(0,0,0,.18);
+    border:2px solid #1fb6d5;
+}
+
+.dfs-notif-menu{
+    width:360px;
+    max-width:92vw;
+    border-radius:14px;
+    border:1px solid rgba(0,0,0,.08);
+    box-shadow:0 14px 34px rgba(0,0,0,.14);
+    padding:0;
+    overflow:hidden;
+}
+
+.dfs-notif-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:12px 14px;
+    background:#f8fafc;
+    border-bottom:1px solid #e2e8f0;
+}
+
+.dfs-notif-title{
+    font-size:14px;
+    font-weight:800;
+    color:#0f172a;
+    margin:0;
+}
+
+.dfs-notif-count{
+    font-size:11px;
+    font-weight:700;
+    color:#475569;
+    background:#e2e8f0;
+    border-radius:999px;
+    padding:3px 8px;
+}
+
+.dfs-notif-list{
+    max-height:380px;
+    overflow:auto;
+}
+
+.dfs-notif-item{
+    display:block;
+    padding:12px 14px;
+    text-decoration:none;
+    color:#0f172a;
+    border-bottom:1px solid #f1f5f9;
+    background:#ffffff;
+}
+
+.dfs-notif-item:hover{
+    background:#f8fafc;
+    color:#0f172a;
+}
+
+.dfs-notif-item.is-unread{
+    background:#eff6ff;
+}
+
+.dfs-notif-item.is-unread:hover{
+    background:#dbeafe;
+}
+
+.dfs-notif-item-title{
+    font-size:13px;
+    font-weight:700;
+    line-height:1.35;
+    margin-bottom:4px;
+    color:#0f172a;
+}
+
+.dfs-notif-item-message{
+    font-size:12px;
+    line-height:1.45;
+    color:#475569;
+    margin-bottom:5px;
+}
+
+.dfs-notif-item-time{
+    font-size:11px;
+    color:#64748b;
+}
+
+.dfs-notif-empty{
+    padding:18px 14px;
+    font-size:13px;
+    color:#64748b;
+    text-align:center;
+    background:#ffffff;
+}
+
 /* ===== MENU BAR ===== */
 
 .dfs-nav-shell{
@@ -385,6 +524,10 @@ body{
         overflow-y:visible;
         -webkit-overflow-scrolling:touch;
     }
+
+    .dfs-notif-menu{
+        width:92vw;
+    }
 }
 
 </style>
@@ -397,17 +540,13 @@ $setting = class_exists(\App\Models\Setting::class)
     ? \App\Models\Setting::query()->first()
     : null;
 
-$logoPath = $setting?->logo_path ?? null;
-
-$bgPath = $setting?->login_background_path ?? null;
-
-$bgUrl = $bgPath
-    ? asset('storage/'.ltrim($bgPath,'/'))
-    : null;
+$logoUrl = $setting?->logo_url;
+$bgUrl = $setting?->login_background_url;
 
 $role = strtolower((string) (auth()->user()->role ?? ''));
 $isOwner = $role === 'owner';
 $isAdmin = $role === 'admin';
+$isMitra = $role === 'dokter_mitra';
 
 $isActive = function(string $pattern){
     return request()->is($pattern) ? 'active' : '';
@@ -437,6 +576,22 @@ $isIncomeMenuActive = request()->is('income*')
 $isInventoryMenuActive = request()->is('inventory*')
     || request()->is('inv/in*')
     || request()->is('inv/out*');
+
+$ownerUnreadNotifications = collect();
+$ownerUnreadNotificationsCount = 0;
+
+if ($isOwner && class_exists(\App\Models\Notification::class)) {
+    $ownerUnreadNotifications = \App\Models\Notification::query()
+        ->where('user_id', auth()->id())
+        ->latest()
+        ->take(10)
+        ->get();
+
+    $ownerUnreadNotificationsCount = \App\Models\Notification::query()
+        ->where('user_id', auth()->id())
+        ->whereNull('read_at')
+        ->count();
+}
 @endphp
 
 <div class="dfs-page-bg"
@@ -448,9 +603,9 @@ $isInventoryMenuActive = request()->is('inventory*')
             <div class="container-fluid d-flex justify-content-between align-items-center">
                 <div class="dfs-brand">
                     <div class="dfs-logo-box">
-                        @if($logoPath)
+                        @if($logoUrl)
                             <img
-                                src="{{ asset('storage/'.ltrim($logoPath,'/')) }}"
+                                src="{{ $logoUrl }}"
                                 class="dfs-clinic-logo"
                                 alt="Logo Klinik">
                         @endif
@@ -459,6 +614,63 @@ $isInventoryMenuActive = request()->is('inventory*')
 
                 <div class="dfs-top-actions">
                     @auth
+
+                        @if($isOwner)
+                            <div class="dropdown dfs-notif-dropdown-wrap">
+                                <button
+                                    class="dfs-notif-toggle"
+                                    type="button"
+                                    data-bs-toggle="dropdown"
+                                    data-bs-auto-close="outside"
+                                    aria-expanded="false"
+                                    title="Notifikasi Dokter Mitra">
+                                    🔔
+                                    @if($ownerUnreadNotificationsCount > 0)
+                                        <span class="dfs-notif-badge">
+                                            {{ $ownerUnreadNotificationsCount > 99 ? '99+' : $ownerUnreadNotificationsCount }}
+                                        </span>
+                                    @endif
+                                </button>
+
+                                <div class="dropdown-menu dropdown-menu-end dfs-notif-menu">
+                                    <div class="dfs-notif-header">
+                                        <div class="dfs-notif-title">Notifikasi Dokter Mitra</div>
+                                        <div class="dfs-notif-count">
+                                            {{ $ownerUnreadNotificationsCount }} belum dibaca
+                                        </div>
+                                    </div>
+
+                                    <div class="dfs-notif-list">
+                                        @forelse($ownerUnreadNotifications as $notif)
+                                            @php
+                                                $isUnread = empty($notif->read_at);
+                                                $notifTitle = trim((string) ($notif->title ?? 'Catatan koreksi baru dari dokter mitra'));
+                                                $notifMessage = trim((string) ($notif->message ?? 'Klik untuk membuka transaksi terkait.'));
+                                            @endphp
+
+                                            <a
+                                                href="{{ route('doctor_mitra.notifications.open', $notif->id) }}"
+                                                class="dfs-notif-item {{ $isUnread ? 'is-unread' : '' }}">
+                                                <div class="dfs-notif-item-title">
+                                                    {{ $notifTitle }}
+                                                </div>
+                                                <div class="dfs-notif-item-message">
+                                                    {{ \Illuminate\Support\Str::limit($notifMessage, 120) }}
+                                                </div>
+                                                <div class="dfs-notif-item-time">
+                                                    {{ optional($notif->created_at)->translatedFormat('d M Y H:i') }}
+                                                </div>
+                                            </a>
+                                        @empty
+                                            <div class="dfs-notif-empty">
+                                                Belum ada notifikasi dari dokter mitra.
+                                            </div>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+
                         <div class="dfs-userbox">
                             <img
                                 src="{{ auth()->user()->photo_url }}"
@@ -491,157 +703,191 @@ $isInventoryMenuActive = request()->is('inventory*')
             <div class="container-fluid dfs-nav-wrap">
                 <ul class="nav dfs-nav nav-pills flex-nowrap gap-1 py-2">
 
-                    <li class="nav-item">
-                        <a class="nav-link nav-dashboard {{ $isActive('dashboard') }}" href="{{ url('/dashboard') }}">Dashboard</a>
-                    </li>
+                    @if($isMitra)
 
-                    <li class="nav-item dropdown">
-                        <a
-                            class="nav-link nav-income dropdown-toggle {{ $isIncomeMenuActive ? 'active' : '' }}"
-                            href="#"
-                            role="button"
-                            data-bs-toggle="dropdown"
-                            data-bs-display="static"
-                            aria-expanded="false">
-                            Pemasukan
-                        </a>
+                        <li class="nav-item">
+                            <a class="nav-link nav-dashboard {{ request()->routeIs('dashboard') ? 'active' : '' }}"
+                               href="{{ route('dashboard') }}">
+                                Dashboard
+                            </a>
+                        </li>
 
-                        <ul class="dropdown-menu">
-                            <li>
-                                <a class="dropdown-item {{ request()->is('income*') ? 'active' : '' }}" href="{{ url('/income') }}">
-                                    Pemasukan Pasien
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item {{ request()->is('other-income*') ? 'active' : '' }}" href="{{ url('/other-income') }}">
-                                    Pemasukan Lain-lain
-                                </a>
-                            </li>
-                            @if($isOwner)
-                                <li><hr class="dropdown-divider"></li>
+                        <li class="nav-item">
+                            <a class="nav-link nav-income {{ request()->routeIs('mitra.pasien') ? 'active' : '' }}"
+                               href="{{ route('mitra.pasien') }}">
+                                Data Pasien
+                            </a>
+                        </li>
+
+                        <li class="nav-item">
+                            <a class="nav-link nav-income {{ request()->routeIs('mitra.transaksi') ? 'active' : '' }}"
+                               href="{{ route('mitra.transaksi') }}">
+                                Transaksi
+                            </a>
+                        </li>
+
+                        <li class="nav-item">
+                            <a class="nav-link nav-report {{ request()->routeIs('mitra.fee') ? 'active' : '' }}"
+                               href="{{ route('mitra.fee') }}">
+                                Fee Saya
+                            </a>
+                        </li>
+
+                    @else
+
+                        <li class="nav-item">
+                            <a class="nav-link nav-dashboard {{ $isActive('dashboard') }}" href="{{ url('/dashboard') }}">Dashboard</a>
+                        </li>
+
+                        <li class="nav-item dropdown">
+                            <a
+                                class="nav-link nav-income dropdown-toggle {{ $isIncomeMenuActive ? 'active' : '' }}"
+                                href="#"
+                                role="button"
+                                data-bs-toggle="dropdown"
+                                data-bs-display="static"
+                                aria-expanded="false">
+                                Pemasukan
+                            </a>
+
+                            <ul class="dropdown-menu">
                                 <li>
-                                    <a class="dropdown-item {{ request()->is('owner-private*') ? 'active' : '' }}" href="{{ url('/owner-private') }}">
-                                        Pemasukan Private
+                                    <a class="dropdown-item {{ request()->is('income*') ? 'active' : '' }}" href="{{ url('/income') }}">
+                                        Pemasukan Pasien
                                     </a>
                                 </li>
-                            @endif
-                        </ul>
-                    </li>
+                                <li>
+                                    <a class="dropdown-item {{ request()->is('other-income*') ? 'active' : '' }}" href="{{ url('/other-income') }}">
+                                        Pemasukan Lain-lain
+                                    </a>
+                                </li>
+                                @if($isOwner)
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <a class="dropdown-item {{ request()->is('owner-private*') ? 'active' : '' }}" href="{{ url('/owner-private') }}">
+                                            Pemasukan Private
+                                        </a>
+                                    </li>
+                                @endif
+                            </ul>
+                        </li>
 
-                    <li class="nav-item">
-                        <a class="nav-link nav-expense {{ $isActive('expenses*') }}" href="{{ url('/expenses') }}">Pengeluaran</a>
-                    </li>
+                        <li class="nav-item">
+                            <a class="nav-link nav-expense {{ $isActive('expenses*') }}" href="{{ url('/expenses') }}">Pengeluaran</a>
+                        </li>
 
-                    <li class="nav-item dropdown">
-                        <a
-                            class="nav-link nav-inventory dropdown-toggle {{ $isInventoryMenuActive ? 'active' : '' }}"
-                            href="#"
-                            role="button"
-                            data-bs-toggle="dropdown"
-                            data-bs-display="static"
-                            aria-expanded="false">
-                            Inventory
-                        </a>
+                        <li class="nav-item dropdown">
+                            <a
+                                class="nav-link nav-inventory dropdown-toggle {{ $isInventoryMenuActive ? 'active' : '' }}"
+                                href="#"
+                                role="button"
+                                data-bs-toggle="dropdown"
+                                data-bs-display="static"
+                                aria-expanded="false">
+                                Inventory
+                            </a>
 
-                        <ul class="dropdown-menu">
-                            <li>
-                                <a class="dropdown-item {{
-                                    (request()->routeIs('inventory.panel') && request('tab', 'items') === 'items')
-                                    || request()->routeIs('inventory.items.*')
-                                        ? 'active' : ''
-                                }}"
-                                   href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel', ['tab' => 'items']) : url('/inventory?tab=items') }}">
-                                    Data Item
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item {{
+                                        (request()->routeIs('inventory.panel') && request('tab', 'items') === 'items')
+                                        || request()->routeIs('inventory.items.*')
+                                            ? 'active' : ''
+                                    }}"
+                                       href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel', ['tab' => 'items']) : url('/inventory?tab=items') }}">
+                                        Data Item
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item {{
+                                        (request()->routeIs('inventory.panel') && request('tab') === 'in')
+                                        || (request()->routeIs('inventory.movements.*') && request()->route('type') === 'in')
+                                            ? 'active' : ''
+                                    }}"
+                                       href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel', ['tab' => 'in']) : url('/inventory?tab=in') }}">
+                                        Inventori Masuk
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item {{
+                                        (request()->routeIs('inventory.panel') && request('tab') === 'out')
+                                        || (request()->routeIs('inventory.movements.*') && request()->route('type') === 'out')
+                                            ? 'active' : ''
+                                    }}"
+                                       href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel', ['tab' => 'out']) : url('/inventory?tab=out') }}">
+                                        Inventori Keluar
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item {{
+                                        (request()->routeIs('inventory.panel') && request('tab') === 'stock')
+                                        || request()->routeIs('inventory.stok')
+                                            ? 'active' : ''
+                                    }}"
+                                       href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel', ['tab' => 'stock']) : url('/inventory?tab=stock') }}">
+                                        Stok Inventory
+                                    </a>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <a class="dropdown-item {{ request()->is('inventory') && !request()->has('tab') ? 'active' : '' }}"
+                                       href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel') : url('/inventory') }}">
+                                        Panel Inventory
+                                    </a>
+                                </li>
+                            </ul>
+                        </li>
+
+                        @if($isOwner)
+                            @php($gudang = $navLink('Gudang','warehouse.panel','/warehouse','warehouse*'))
+                            <li class="nav-item">
+                                <a class="{{ $gudang['cls'] }} nav-warehouse" href="{{ $gudang['href'] }}">
+                                    {{ $gudang['label'] }}
+                                    @if($gudang['soon']) <span class="dfs-badge-soon">Soon</span>@endif
                                 </a>
                             </li>
-                            <li>
-                                <a class="dropdown-item {{
-                                    (request()->routeIs('inventory.panel') && request('tab') === 'in')
-                                    || (request()->routeIs('inventory.movements.*') && request()->route('type') === 'in')
-                                        ? 'active' : ''
-                                }}"
-                                   href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel', ['tab' => 'in']) : url('/inventory?tab=in') }}">
-                                    Inventori Masuk
+
+                            @php($lap = $navLink('Laporan','reports.laba-rugi','/reports/laba-rugi','reports*'))
+                            <li class="nav-item">
+                                <a class="{{ $lap['cls'] }} nav-report" href="{{ $lap['href'] }}">
+                                    {{ $lap['label'] }}
+                                    @if($lap['soon']) <span class="dfs-badge-soon">Soon</span>@endif
                                 </a>
                             </li>
-                            <li>
-                                <a class="dropdown-item {{
-                                    (request()->routeIs('inventory.panel') && request('tab') === 'out')
-                                    || (request()->routeIs('inventory.movements.*') && request()->route('type') === 'out')
-                                        ? 'active' : ''
-                                }}"
-                                   href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel', ['tab' => 'out']) : url('/inventory?tab=out') }}">
-                                    Inventori Keluar
+
+                            @php($md = $navLink('Master Dokter','master.doctors.index','/master/doctors','master/doctors*'))
+                            <li class="nav-item">
+                                <a class="{{ $md['cls'] }} nav-master-doctor" href="{{ $md['href'] }}">
+                                    {{ $md['label'] }}
+                                    @if($md['soon']) <span class="dfs-badge-soon">Soon</span>@endif
                                 </a>
                             </li>
-                            <li>
-                                <a class="dropdown-item {{
-                                    (request()->routeIs('inventory.panel') && request('tab') === 'stock')
-                                    || request()->routeIs('inventory.stok')
-                                        ? 'active' : ''
-                                }}"
-                                   href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel', ['tab' => 'stock']) : url('/inventory?tab=stock') }}">
-                                    Stok Inventory
+
+                            @php($mt = $navLink('Master Tindakan','master.treatments.index','/master/treatments','master/treatments*'))
+                            <li class="nav-item">
+                                <a class="{{ $mt['cls'] }} nav-master-treatment" href="{{ $mt['href'] }}">
+                                    {{ $mt['label'] }}
+                                    @if($mt['soon']) <span class="dfs-badge-soon">Soon</span>@endif
                                 </a>
                             </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item {{ request()->is('inventory') && !request()->has('tab') ? 'active' : '' }}"
-                                   href="{{ \Illuminate\Support\Facades\Route::has('inventory.panel') ? route('inventory.panel') : url('/inventory') }}">
-                                    Panel Inventory
+
+                            @php($mu = $navLink('Master User','master.users.index','/master/users','master/users*'))
+                            <li class="nav-item">
+                                <a class="{{ $mu['cls'] }} nav-master-user" href="{{ $mu['href'] }}">
+                                    {{ $mu['label'] }}
+                                    @if($mu['soon']) <span class="dfs-badge-soon">Soon</span>@endif
                                 </a>
                             </li>
-                        </ul>
-                    </li>
+                        @elseif($isAdmin)
+                            @php($kas = $navLink('Kas Harian','reports.daily_cash.index','/reports/kas-harian','reports/kas-harian*'))
+                            <li class="nav-item">
+                                <a class="{{ $kas['cls'] }} nav-report" href="{{ $kas['href'] }}">
+                                    {{ $kas['label'] }}
+                                    @if($kas['soon']) <span class="dfs-badge-soon">Soon</span>@endif
+                                </a>
+                            </li>
+                        @endif
 
-                    @if($isOwner)
-                        @php($gudang = $navLink('Gudang','warehouse.panel','/warehouse','warehouse*'))
-                        <li class="nav-item">
-                            <a class="{{ $gudang['cls'] }} nav-warehouse" href="{{ $gudang['href'] }}">
-                                {{ $gudang['label'] }}
-                                @if($gudang['soon']) <span class="dfs-badge-soon">Soon</span>@endif
-                            </a>
-                        </li>
-
-                        @php($lap = $navLink('Laporan','reports.laba-rugi','/reports/laba-rugi','reports*'))
-                        <li class="nav-item">
-                            <a class="{{ $lap['cls'] }} nav-report" href="{{ $lap['href'] }}">
-                                {{ $lap['label'] }}
-                                @if($lap['soon']) <span class="dfs-badge-soon">Soon</span>@endif
-                            </a>
-                        </li>
-
-                        @php($md = $navLink('Master Dokter','master.doctors.index','/master/doctors','master/doctors*'))
-                        <li class="nav-item">
-                            <a class="{{ $md['cls'] }} nav-master-doctor" href="{{ $md['href'] }}">
-                                {{ $md['label'] }}
-                                @if($md['soon']) <span class="dfs-badge-soon">Soon</span>@endif
-                            </a>
-                        </li>
-
-                        @php($mt = $navLink('Master Tindakan','master.treatments.index','/master/treatments','master/treatments*'))
-                        <li class="nav-item">
-                            <a class="{{ $mt['cls'] }} nav-master-treatment" href="{{ $mt['href'] }}">
-                                {{ $mt['label'] }}
-                                @if($mt['soon']) <span class="dfs-badge-soon">Soon</span>@endif
-                            </a>
-                        </li>
-
-                        @php($mu = $navLink('Master User','master.users.index','/master/users','master/users*'))
-                        <li class="nav-item">
-                            <a class="{{ $mu['cls'] }} nav-master-user" href="{{ $mu['href'] }}">
-                                {{ $mu['label'] }}
-                                @if($mu['soon']) <span class="dfs-badge-soon">Soon</span>@endif
-                            </a>
-                        </li>
-                    @elseif($isAdmin)
-                        @php($kas = $navLink('Kas Harian','reports.daily_cash.index','/reports/kas-harian','reports/kas-harian*'))
-                        <li class="nav-item">
-                            <a class="{{ $kas['cls'] }} nav-report" href="{{ $kas['href'] }}">
-                                {{ $kas['label'] }}
-                                @if($kas['soon']) <span class="dfs-badge-soon">Soon</span>@endif
-                            </a>
-                        </li>
                     @endif
 
                 </ul>

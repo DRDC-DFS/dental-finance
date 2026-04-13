@@ -35,6 +35,55 @@ class OwnerFinanceController extends Controller
         return (float) $digits;
     }
 
+    private function isCaseDoneState(?OwnerFinanceCase $case): bool
+    {
+        if (!$case) {
+            return false;
+        }
+
+        return (bool) ($case->lab_paid ?? false) && (bool) ($case->installed ?? false);
+    }
+
+    private function resolveAutoProsthoCaseType(?IncomeTransaction $transaction): ?string
+    {
+        if (!$transaction) {
+            return null;
+        }
+
+        $transaction->loadMissing(['items.treatment.category']);
+
+        foreach (($transaction->items ?? collect()) as $item) {
+            $item->loadMissing('treatment.category');
+
+            $categoryName = strtolower(trim((string) data_get($item, 'treatment.category.name', '')));
+            $treatmentName = trim((string) data_get($item, 'treatment.name', ''));
+
+            if ($treatmentName === '') {
+                continue;
+            }
+
+            $haystack = strtolower($categoryName . ' ' . $treatmentName);
+
+            if (
+                str_contains($haystack, 'prostodonti') ||
+                str_contains($haystack, 'prostho') ||
+                str_contains($haystack, 'prostodonsi') ||
+                str_contains($haystack, 'gigi tiruan') ||
+                str_contains($haystack, 'lepasan') ||
+                str_contains($haystack, 'bridge') ||
+                str_contains($haystack, 'implant') ||
+                str_contains($haystack, 'implan') ||
+                str_contains($haystack, 'valplast') ||
+                str_contains($haystack, 'crown') ||
+                str_contains($haystack, 'veneer')
+            ) {
+                return mb_substr($treatmentName, 0, 50);
+            }
+        }
+
+        return null;
+    }
+
     private function getNextInstallmentNumber(OwnerFinanceCase $case): int
     {
         $lastNo = (int) $case->installments()->max('installment_no');
@@ -269,7 +318,13 @@ class OwnerFinanceController extends Controller
         $caseType = strtolower((string) ($case->case_type ?? ''));
 
         if (in_array($caseType, ['prostodonti', 'retainer', 'lab'], true)) {
-            $case->prostho_case_type = trim((string) ($data['prostho_case_type'] ?? '')) ?: null;
+            $manualCaseType = trim((string) ($data['prostho_case_type'] ?? ''));
+            $autoCaseType = $this->resolveAutoProsthoCaseType($case->incomeTransaction);
+
+            $case->prostho_case_type = $manualCaseType !== ''
+                ? mb_substr($manualCaseType, 0, 50)
+                : ($autoCaseType !== null ? mb_substr($autoCaseType, 0, 50) : null);
+
             $case->prostho_case_detail = trim((string) ($data['prostho_case_detail'] ?? '')) ?: null;
             $case->lab_bill_amount = $this->cleanToNumber($data['lab_bill_amount'] ?? '0');
             return;
@@ -345,6 +400,10 @@ class OwnerFinanceController extends Controller
         $summary = [
             'total_cases' => $summaryRows->count(),
             'needs_attention' => $summaryRows->filter(function ($case) {
+                if ($this->isCaseDoneState($case)) {
+                    return false;
+                }
+
                 return strtolower((string) ($case->owner_followup_status ?? '')) === 'needs_setup'
                     || (bool) ($case->needs_setup ?? false);
             })->count(),
@@ -355,7 +414,7 @@ class OwnerFinanceController extends Controller
                 return strtolower((string) ($case->owner_followup_status ?? '')) === 'done';
             })->count(),
             'held_cases' => $summaryRows->filter(function ($case) {
-                return !((bool) ($case->lab_paid ?? false) && (bool) ($case->installed ?? false));
+                return !$this->isCaseDoneState($case);
             })->count(),
             'potential_clinic_income' => round((float) $summaryRows->sum(function ($case) {
                 return (float) ($case->clinic_income_amount ?? 0);
@@ -415,7 +474,7 @@ class OwnerFinanceController extends Controller
                 return redirect()->route('owner_finance.edit', $existing->id);
             }
 
-            $incomeTransaction = IncomeTransaction::with(['patient', 'doctor'])->findOrFail($incomeId);
+            $incomeTransaction = IncomeTransaction::with(['patient', 'doctor', 'items.treatment.category'])->findOrFail($incomeId);
         }
 
         $transactions = IncomeTransaction::with(['patient', 'doctor'])
@@ -423,6 +482,8 @@ class OwnerFinanceController extends Controller
             ->orderByDesc('id')
             ->limit(100)
             ->get();
+
+        $autoProsthoCaseType = $this->resolveAutoProsthoCaseType($incomeTransaction);
 
         return view('owner_finance.form', [
             'mode' => 'create',
@@ -432,7 +493,7 @@ class OwnerFinanceController extends Controller
                 'installed' => false,
                 'lab_paid_at' => null,
                 'installed_at' => null,
-                'prostho_case_type' => null,
+                'prostho_case_type' => $autoProsthoCaseType,
                 'prostho_case_detail' => null,
                 'lab_bill_amount' => 0,
                 'clinic_income_amount' => 0,
@@ -482,6 +543,7 @@ class OwnerFinanceController extends Controller
         return DB::transaction(function () use ($data) {
             $case = new OwnerFinanceCase();
             $case->income_transaction_id = (int) $data['income_transaction_id'];
+            $case->setRelation('incomeTransaction', IncomeTransaction::with(['items.treatment.category'])->find($case->income_transaction_id));
             $case->case_type = $data['case_type'];
             $case->lab_paid = (bool) ($data['lab_paid'] ?? false);
             $case->installed = (bool) ($data['installed'] ?? false);
@@ -516,12 +578,19 @@ class OwnerFinanceController extends Controller
     {
         $this->ensureOwner();
 
+        $ownerFinanceCase = $this->syncFromTransaction($ownerFinanceCase);
+
         $ownerFinanceCase->load([
             'incomeTransaction.patient',
             'incomeTransaction.doctor',
+            'incomeTransaction.items.treatment.category',
             'installments',
             'monthlyLedgers',
         ]);
+
+        if (empty($ownerFinanceCase->prostho_case_type)) {
+            $ownerFinanceCase->prostho_case_type = $this->resolveAutoProsthoCaseType($ownerFinanceCase->incomeTransaction);
+        }
 
         return view('owner_finance.form', [
             'mode' => 'edit',
@@ -561,6 +630,7 @@ class OwnerFinanceController extends Controller
         ]);
 
         return DB::transaction(function () use ($data, $ownerFinanceCase) {
+            $ownerFinanceCase->loadMissing(['incomeTransaction.items.treatment.category']);
             $ownerFinanceCase->case_type = $data['case_type'];
             $ownerFinanceCase->lab_paid = (bool) ($data['lab_paid'] ?? false);
             $ownerFinanceCase->installed = (bool) ($data['installed'] ?? false);
